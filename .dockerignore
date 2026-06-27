@@ -1,0 +1,5 @@
+pg_data
+venv
+.git
+__pycache__
+.idea

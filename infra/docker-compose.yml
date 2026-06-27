@@ -1,0 +1,15 @@
+version: '3.8'
+
+services:
+  bot:
+    build:
+      context: ../
+      dockerfile: infra/Dockerfile
+    container_name: bot
+    restart: always
+    ports:
+      - "${BOT_PORT}:${BOT_PORT}"
+    env_file:
+      - ../.env
+    volumes:
+      - ../src/bot:/app/bot
