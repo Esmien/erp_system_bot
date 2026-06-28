@@ -1,9 +1,70 @@
+from contextlib import asynccontextmanager
+
 import uvicorn
-from fastapi import FastAPI
+from aiogram import Bot, Dispatcher, types
+from aiogram.client.default import DefaultBotProperties
+from aiogram.enums import ParseMode
+from aiogram.fsm.storage.memory import MemoryStorage
+from fastapi import FastAPI, HTTPException, Request
+from loguru import logger
 
 from bot.core.config import settings
+from bot.core.logger import setup_logger
+from bot.handlers.auth import router as auth_router
 
-app = FastAPI()
+# Инициализация aiogram
+bot = Bot(token=settings.bot.BOT_TOKEN, default=DefaultBotProperties(parse_mode=ParseMode.HTML))
+dp = Dispatcher(storage=MemoryStorage())
+
+dp.include_router(auth_router)
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Жизненный цикл FastAPI-приложения: старт и остановка"""
+    setup_logger()
+
+    # Собираем полный URL для вебхука
+    webhook_url = f"{settings.webhook.WEBHOOK_HOST}{settings.webhook.WEBHOOK_PATH}"
+
+    logger.info(f"Устанавливаем вебхук на {webhook_url}")
+    await bot.set_webhook(
+        url=webhook_url,
+        secret_token=settings.webhook.WEBHOOK_SECRET,
+        drop_pending_updates=True,  # Игнорируем старые сообщения, пока бот лежал
+        allowed_updates=dp.resolve_used_update_types(),
+    )
+    logger.success("Вебхук установлен")
+
+    yield
+
+    logger.info("Удаляем вебхук и закрываем сессию бота")
+    await bot.delete_webhook()
+    await bot.session.close()
+    logger.success("Сервис успешно остановлен")
+
+
+app = FastAPI(lifespan=lifespan)
+
+
+@app.post(settings.webhook.WEBHOOK_PATH)
+async def bot_webhook(request: Request):
+    """Эндпоинт, на который Telegram присылает обновления"""
+
+    # Проверка секретного токена для защиты от левых запросов
+    secret_token = request.headers.get("X-Telegram-Bot-Api-Secret-Token")
+    if secret_token != settings.webhook.WEBHOOK_SECRET:
+        logger.warning("Получен запрос с неверным секретным токеном!")
+        raise HTTPException(status_code=401, detail="Unauthorized")
+
+    # Распаковываем JSON от Telegram
+    update_data = await request.json()
+    telegram_update = types.Update(**update_data)
+
+    # Скармливаем апдейт диспетчеру aiogram
+    await dp.feed_update(bot=bot, update=telegram_update)
+
+    return {"status": "ok"}
 
 
 @app.get("/healthcheck/")
@@ -12,4 +73,4 @@ async def healthcheck():
 
 
 if __name__ == "__main__":
-    uvicorn.run(app="bot.main:app", host=settings.bot.BOT_HOST, port=settings.bot.BOT_PORT, reload=True)
+    uvicorn.run(app=app, host=settings.bot.BOT_HOST, port=settings.bot.BOT_PORT)
