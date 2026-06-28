@@ -11,19 +11,19 @@ class LoggerConfig(BaseModelConfig):
 
 
 class ApiConfig(BaseModelConfig):
-    API_BASE_URL: str = "http://backend:8000/api/v1"
+    API_BASE_URL: str
 
 
 class BotConfig(BaseModelConfig):
-    BOT_TOKEN: str = ""
+    BOT_TOKEN: str
     BOT_HOST: str = "0.0.0.0"
     BOT_PORT: int = 8080
 
 
 class WebhookConfig(BaseModelConfig):
-    WEBHOOK_HOST: str = ""
+    WEBHOOK_HOST: str
     WEBHOOK_PATH: str = "/webhook"
-    WEBHOOK_SECRET: str = ""
+    WEBHOOK_SECRET: str
 
 
 class Settings(BaseModelConfig):
