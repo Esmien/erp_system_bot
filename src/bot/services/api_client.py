@@ -31,7 +31,7 @@ async def attempt_telegram_login(tg_id: int) -> str | None:
             return None
 
         except httpx.RequestError as e:
-            logger.error(f"Ошибка соединения с бэкендом: {e}")
+            logger.exception(f"Ошибка соединения с бэкендом: {e}")
             return None
 
 
@@ -60,7 +60,7 @@ async def link_telegram_account(tg_id: int, email: str, password: str) -> str | 
             return None
 
         except httpx.RequestError as e:
-            logger.error(f"Ошибка соединения с бэкендом при привязке: {e}")
+            logger.exception(f"Ошибка соединения с бэкендом при привязке: {e}")
             return None
 
 
