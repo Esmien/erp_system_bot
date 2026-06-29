@@ -1,9 +1,14 @@
-from typing import Literal
+from enum import StrEnum
 
 from aiogram.types import KeyboardButton, ReplyKeyboardMarkup, ReplyKeyboardRemove
 
 
-def get_main_keyboard(action: Literal["Старт", "Выход"]) -> ReplyKeyboardMarkup:
+class Actions(StrEnum):
+    start = "Старт"
+    logout = "Выход"
+
+
+def get_main_keyboard(action: Actions) -> ReplyKeyboardMarkup:
     """Главное меню"""
     return ReplyKeyboardMarkup(
         keyboard=[[KeyboardButton(text=action)]],
