@@ -90,5 +90,5 @@ async def unlink_telegram_account(tg_id: int) -> bool:
             return False
 
         except httpx.RequestError as e:
-            logger.error(f"Ошибка соединения с бэкендом при отвязке: {e}")
+            logger.exception(f"Ошибка соединения с бэкендом при отвязке: {e}")
             return False
