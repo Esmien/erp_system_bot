@@ -10,7 +10,7 @@ from loguru import logger
 
 from bot.core.config import settings
 from bot.core.logger import setup_logger
-from bot.handlers.auth import router as auth_router
+from bot.handlers.auth_handler import router as auth_router
 
 # Инициализация aiogram
 bot = Bot(token=settings.bot.BOT_TOKEN, default=DefaultBotProperties(parse_mode=ParseMode.HTML))
