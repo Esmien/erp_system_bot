@@ -10,6 +10,23 @@ class LoggerConfig(BaseModelConfig):
     LOG_SERIALIZE: bool = False  # Если True, будет писать в JSON
 
 
+class RedisConfig(BaseModelConfig):
+    REDIS_HOST: str
+    REDIS_PORT: int
+    KEY_OF_SYSTEM_TOKEN: str  # ключ в хранилище redis, по которому лежит системный токен
+    REDIS_WORK_DB: int = 2
+    REDIS_CONFIG_DB: int = 0
+    CACHE_TTL: int = 3600
+
+    @property
+    def redis_url(self) -> str:
+        return f"redis://{self.REDIS_HOST}:{self.REDIS_PORT}/{self.REDIS_WORK_DB}"
+
+    @property
+    def redis_config_url(self) -> str:
+        return f"redis://{self.REDIS_HOST}:{self.REDIS_PORT}/{self.REDIS_CONFIG_DB}"
+
+
 class ApiConfig(BaseModelConfig):
     API_BASE_URL: str
 
@@ -31,6 +48,7 @@ class Settings(BaseModelConfig):
     bot: BotConfig = BotConfig()
     webhook: WebhookConfig = WebhookConfig()
     api: ApiConfig = ApiConfig()
+    redis: RedisConfig = RedisConfig()
 
 
 settings = Settings()
