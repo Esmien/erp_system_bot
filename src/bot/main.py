@@ -4,17 +4,17 @@ import uvicorn
 from aiogram import Bot, Dispatcher, types
 from aiogram.client.default import DefaultBotProperties
 from aiogram.enums import ParseMode
-from aiogram.fsm.storage.memory import MemoryStorage
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import FastAPI, HTTPException, Request, status
 from loguru import logger
 
 from bot.core.config import settings
 from bot.core.logger import setup_logger
-from bot.handlers.auth import router as auth_router
+from bot.core.redis import close_redis, redis_client_config, storage
+from bot.handlers.auth_handler import router as auth_router
 
 # Инициализация aiogram
 bot = Bot(token=settings.bot.BOT_TOKEN, default=DefaultBotProperties(parse_mode=ParseMode.HTML))
-dp = Dispatcher(storage=MemoryStorage())
+dp = Dispatcher(storage=storage)
 
 dp.include_router(auth_router)
 
@@ -35,22 +35,28 @@ async def lifespan(app: FastAPI):
         allowed_updates=dp.resolve_used_update_types(),
     )
     logger.success("Вебхук установлен")
+    await redis_client_config.set(settings.redis.KEY_OF_SYSTEM_TOKEN, settings.webhook.WEBHOOK_SECRET)
+    logger.success("Системный секрет опубликован в Redis")
 
     yield
 
     logger.info("Удаляем вебхук и закрываем сессию бота")
     await bot.delete_webhook()
     await bot.session.close()
+    await close_redis()
     logger.success("Сервис успешно остановлен")
 
 
 app = FastAPI(lifespan=lifespan)
 
 
-@app.post(settings.webhook.WEBHOOK_PATH)
+@app.post(
+    path=settings.webhook.WEBHOOK_PATH,
+    status_code=status.HTTP_200_OK,
+    summary="Эндпоинт для получения обновлений из ТГ",
+)
 async def bot_webhook(request: Request):
     """Эндпоинт, на который Telegram присылает обновления"""
-
     # Проверка секретного токена для защиты от левых запросов
     secret_token = request.headers.get("X-Telegram-Bot-Api-Secret-Token")
     if secret_token != settings.webhook.WEBHOOK_SECRET:
