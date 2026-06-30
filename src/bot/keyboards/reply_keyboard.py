@@ -6,12 +6,13 @@ from aiogram.types import KeyboardButton, ReplyKeyboardMarkup, ReplyKeyboardRemo
 class Actions(StrEnum):
     start = "Старт"
     logout = "Выход"
+    cancel = "Отмена"
 
 
-def get_main_keyboard(action: Actions) -> ReplyKeyboardMarkup:
+def get_main_keyboard(*actions) -> ReplyKeyboardMarkup:
     """Главное меню"""
     return ReplyKeyboardMarkup(
-        keyboard=[[KeyboardButton(text=action)]],
+        keyboard=[[KeyboardButton(text=action)] for action in actions],
         resize_keyboard=True,  # Подгоняет размер кнопки под экран
         input_field_placeholder="Выберите действие...",  # Подсказка в поле ввода
     )

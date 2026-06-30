@@ -17,6 +17,7 @@ async def cmd_start(message: types.Message, state: FSMContext):
     """
     Точка входа: авторизует пользователя по токену или запускает FSM-сценарий привязки аккаунта.
     """
+    await state.clear()
     await message.answer("Проверяю учетную запись ERP...")
 
     # Стучимся на бэкенд
@@ -40,6 +41,20 @@ async def cmd_start(message: types.Message, state: FSMContext):
         await state.set_state(AuthState.waiting_for_email)
 
 
+@router.message(Command("cancel"))
+@router.message(F.text == Actions.cancel)
+async def cmd_cancel(message: types.Message, state: FSMContext):
+    """
+    Хэндлер для сброса состояния при зависании состояния
+    """
+    current_state = await state.get_state()
+    if current_state is None:
+        return  # Стейта и так нет, ничего не делаем
+
+    await state.clear()
+    await message.answer(text="Действие отменено.", reply_markup=get_main_keyboard(Actions.start))
+
+
 @router.message(AuthState.waiting_for_email, F.text)
 async def process_email(message: types.Message, state: FSMContext):
     """
@@ -50,12 +65,13 @@ async def process_email(message: types.Message, state: FSMContext):
     # Сохраняем введенный email в память FSM
     await state.update_data(email=message.text.strip())
 
-    await message.answer("Введи пароль:")
+    await message.answer(text="Введи пароль:", reply_markup=get_main_keyboard(Actions.cancel))
     # Переключаем FSM: теперь бот ждет пароль
     await state.set_state(AuthState.waiting_for_password)
 
 
 @router.message(AuthState.waiting_for_password, F.text)
+@router.message(F.text == Actions.cancel)
 async def process_password(message: types.Message, state: FSMContext):
     """
     Хэндлер для обработки пароля.
@@ -71,7 +87,9 @@ async def process_password(message: types.Message, state: FSMContext):
     password = message.text.strip()
 
     if not email or not isinstance(email, str):
-        await message.answer("С почтой что-то не так. Отправь свой email повторно:")
+        await message.answer(
+            text="С почтой что-то не так. Отправь свой email повторно:", reply_markup=get_main_keyboard(Actions.cancel)
+        )
         await state.set_state(AuthState.waiting_for_email)
         return
 
@@ -125,5 +143,5 @@ async def cmd_logout(message: types.Message, state: FSMContext):
     else:
         await message.answer(
             text="Выход выполнен локально, но сервер не ответил. Связь будет разорвана позже",
-            reply_markup=get_main_keyboard(Actions.start),
+            reply_markup=get_main_keyboard(Actions.start, Actions.cancel),
         )
