@@ -1,16 +1,22 @@
-import logging
-
 import httpx
+from httpx import Response
+from loguru import logger
 
 from bot.core.config import settings
-
-logger = logging.getLogger(__name__)
+from bot.core.redis import redis_client
 
 # Создаем константу локально для удобства использования
 API_BASE_URL = settings.api.API_BASE_URL
 
 
-async def attempt_telegram_login(tg_id: int) -> str | None:
+def _get_tokens(response: Response) -> tuple[str, str] | None:
+    data = response.json()
+    access_token = data.get("access_token")
+    refresh_token = data.get("refresh_token")
+    return access_token, refresh_token
+
+
+async def attempt_telegram_login(tg_id: int) -> tuple[str, str] | tuple[None, None] | None:
     """
     Отправляет запрос на бэкенд для тихой аутентификации
 
@@ -24,18 +30,19 @@ async def attempt_telegram_login(tg_id: int) -> str | None:
         try:
             response = await client.post(url="/auth/telegram/login/", json={"tg_id": tg_id})
             if response.status_code == 200:
-                data = response.json()
-                return data.get("access_token")
+                access_token, refresh_token = _get_tokens(response=response)
+                logger.debug(f"ACCESS: {access_token[:-10]}, REFRESH: {refresh_token[:-10]} для User: {tg_id}")
+                return access_token, refresh_token
 
             # Если 401 Unauthorized или 404 (юзера нет/не привязан)
-            return None
+            return None, None
 
         except httpx.RequestError as e:
             logger.exception(f"Ошибка соединения с бэкендом: {e}")
-            return None
+            return None, None
 
 
-async def link_telegram_account(tg_id: int, email: str, password: str) -> str | None:
+async def link_telegram_account(tg_id: int, email: str, password: str) -> tuple[str, str] | tuple[None, None]:
     """
     Отправляет креды на бэкенд для привязки
 
@@ -53,15 +60,15 @@ async def link_telegram_account(tg_id: int, email: str, password: str) -> str | 
             response = await client.post(url="/auth/telegram/link/", json=payload)
 
             if response.status_code == 200:
-                data = response.json()
-                return data.get("access_token")  # Сразу забираем токен из ответа
+                access_token, refresh_token = _get_tokens(response=response)
+                return access_token, refresh_token
 
             logger.warning(f"Ошибка привязки аккаунта: {response.text}")
-            return None
+            return None, None
 
         except httpx.RequestError as e:
             logger.exception(f"Ошибка соединения с бэкендом при привязке: {e}")
-            return None
+            return None, None
 
 
 async def unlink_telegram_account(tg_id: int) -> bool:
@@ -84,6 +91,7 @@ async def unlink_telegram_account(tg_id: int) -> bool:
             response = await client.post(url="/auth/telegram/unlink/", json=payload, headers=headers)
 
             if response.status_code == 200:
+                await redis_client.delete(f"backend:jwt:access:{tg_id}", f"backend:jwt:refresh:{tg_id}")
                 return True
 
             logger.warning(f"Ошибка отвязки аккаунта: {response.text}")
@@ -92,3 +100,37 @@ async def unlink_telegram_account(tg_id: int) -> bool:
         except httpx.RequestError as e:
             logger.exception(f"Ошибка соединения с бэкендом при отвязке: {e}")
             return False
+
+
+async def get_registration_code(token: str) -> tuple[int | None, str | None]:
+    """
+    Получает код для регистрации. Работает только для админов.
+
+    Args:
+        token: JWT токен пользователя, который генерирует
+
+    Returns:
+        Кортеж, состоящий из полученного статус-кода от бэкенда и кода регистрации.
+        Если бэк недоступен, то статус-код None
+        Если бэк не ответил 201 OK, код регистрации None
+    """
+    url = "/auth/generate-register-code/"
+    headers = {"Authorization": f"Bearer {token}"}
+
+    async with httpx.AsyncClient(base_url=API_BASE_URL) as client:
+        try:
+            response = await client.post(url=url, headers=headers)
+            status_code = response.status_code
+            register_code = None
+
+            if status_code == 201:
+                data = response.json()
+                register_code = data.get("register_code")
+                logger.success(f"Код регистрации {register_code} успешно сгенерирован")
+            else:
+                logger.error(f"Неожиданный ответ от бэкенда при генерации кода: {status_code}")
+
+            return status_code, register_code
+        except httpx.RequestError as e:
+            logger.exception(f"Ошибка соединения с бэкендом при отвязке: {e}")
+            return None, None

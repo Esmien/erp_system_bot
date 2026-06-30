@@ -10,6 +10,7 @@ from loguru import logger
 from bot.core.config import settings
 from bot.core.logger import setup_logger
 from bot.core.redis import close_redis, redis_client, storage
+from bot.handlers.admin_handler import router as admin_router
 from bot.handlers.auth_handler import router as auth_router
 
 # Инициализация aiogram
@@ -17,6 +18,7 @@ bot = Bot(token=settings.bot.BOT_TOKEN, default=DefaultBotProperties(parse_mode=
 dp = Dispatcher(storage=storage)
 
 dp.include_router(auth_router)
+dp.include_router(admin_router)
 
 
 @asynccontextmanager
