@@ -3,10 +3,14 @@ from enum import StrEnum
 from aiogram.types import KeyboardButton, ReplyKeyboardMarkup, ReplyKeyboardRemove
 
 
-class Actions(StrEnum):
+class BaseActions(StrEnum):
     start = "Старт"
     logout = "Выход"
     cancel = "Отмена"
+
+
+class AdminActions(StrEnum):
+    make_reg_code = "Код"
 
 
 def get_main_keyboard(*actions) -> ReplyKeyboardMarkup:
