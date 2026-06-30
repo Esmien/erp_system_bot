@@ -123,7 +123,7 @@ async def process_password(message: types.Message, state: FSMContext):
         await state.update_data(access_token=access_token, refresh_token=refresh_token)
         await message.answer(
             text="Учетная запись успешно привязана! Добро пожаловать.",
-            reply_markup=get_main_keyboard(BaseActions.logout),
+            reply_markup=get_main_keyboard(AdminActions.make_reg_code, BaseActions.logout),
         )
     else:
         await message.answer(
