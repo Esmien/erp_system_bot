@@ -9,7 +9,7 @@ from loguru import logger
 
 from bot.core.config import settings
 from bot.core.logger import setup_logger
-from bot.core.redis import close_redis, redis_client_config, storage
+from bot.core.redis import close_redis, redis_client, storage
 from bot.handlers.auth_handler import router as auth_router
 
 # Инициализация aiogram
@@ -35,7 +35,7 @@ async def lifespan(app: FastAPI):
         allowed_updates=dp.resolve_used_update_types(),
     )
     logger.success("Вебхук установлен")
-    await redis_client_config.set(settings.redis.KEY_OF_SYSTEM_TOKEN, settings.webhook.WEBHOOK_SECRET)
+    await redis_client.set(settings.redis.KEY_OF_SYSTEM_TOKEN, settings.webhook.WEBHOOK_SECRET)
     logger.success("Системный секрет опубликован в Redis")
 
     yield
