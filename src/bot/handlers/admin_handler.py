@@ -2,15 +2,15 @@ from aiogram import F, Router, types
 from aiogram.filters import Command
 from aiogram.fsm.context import FSMContext
 
+from bot.api_clients.api_registration_client import ApiRegistrationClient
 from bot.keyboards.reply_keyboard import AdminActions, BaseActions, get_main_keyboard
-from bot.services.api_client import get_registration_code
 
 router = Router()
 
 
 @router.message(Command("make_reg_code"))
 @router.message(F.text == AdminActions.make_reg_code)
-async def make_reg_code(message: types.Message, state: FSMContext):
+async def make_reg_code(message: types.Message, state: FSMContext, reg_client: ApiRegistrationClient):
     """Хэндлер для генерации кода регистрации"""
     data = await state.get_data()
     token: str | None = data.get("access_token")
@@ -19,7 +19,7 @@ async def make_reg_code(message: types.Message, state: FSMContext):
         await message.answer("Сначала необходимо авторизоваться в системе.")
         return
 
-    status_code, register_code = await get_registration_code(token=token)
+    status_code, register_code = await reg_client.get_registration_code(token=token)
 
     statuses = {
         201: "✅ <b>Код регистрации успешно создан!</b>\n\n"
@@ -33,6 +33,7 @@ async def make_reg_code(message: types.Message, state: FSMContext):
         await message.answer(
             text="Проблемы на сервере, попробуйте позже", reply_markup=get_main_keyboard(BaseActions.start)
         )
+        return
 
     if status_code in statuses:
-        await message.answer(statuses.get(status_code))
+        await message.answer(statuses[status_code])

@@ -4,8 +4,8 @@ from aiogram import F, Router, types
 from aiogram.filters import Command, CommandStart
 from aiogram.fsm.context import FSMContext
 
+from bot.api_clients.api_auth_client import ApiAuthClient
 from bot.keyboards.reply_keyboard import AdminActions, BaseActions, get_main_keyboard
-from bot.services.api_client import attempt_telegram_login, link_telegram_account, unlink_telegram_account
 from bot.states.auth_state import AuthState
 
 router = Router()
@@ -13,12 +13,13 @@ router = Router()
 
 @router.message(CommandStart())
 @router.message(F.text == BaseActions.start)
-async def cmd_start(message: types.Message, state: FSMContext):
+async def cmd_start(message: types.Message, state: FSMContext, auth_client: ApiAuthClient):
     """
     Точка входа.
     Выполняет тихую авторизацию, если TelegramID пользователя связан с учеткой ERP
     Если связи нет - предлагает авторизацию по логину и паролю
     """
+
     data = await state.get_data()
 
     # Проверяем кэш FSM (тихая авторизация без дерганья бэкенда)
@@ -33,7 +34,7 @@ async def cmd_start(message: types.Message, state: FSMContext):
     await message.answer("Проверяю учетную запись ERP...")
 
     # Если в стейте пусто, стучимся на бэкенд по tg_id
-    access_token, refresh_token = await attempt_telegram_login(tg_id=message.from_user.id)
+    access_token, refresh_token = await auth_client.attempt_telegram_login()
 
     if access_token:
         # Сохраняем токены в FSM, они попадут в redis
@@ -82,8 +83,7 @@ async def process_email(message: types.Message, state: FSMContext):
 
 
 @router.message(AuthState.waiting_for_password, F.text)
-@router.message(F.text == BaseActions.cancel)
-async def process_password(message: types.Message, state: FSMContext):
+async def process_password(message: types.Message, state: FSMContext, auth_client: ApiAuthClient):
     """
     Хэндлер для обработки пароля.
     Срабатывает только тогда, когда контекст ожидает ввода пароля (waiting_for_password)
@@ -113,9 +113,7 @@ async def process_password(message: types.Message, state: FSMContext):
     await message.answer("Выполняю привязку аккаунта...")
 
     # Отправляем креды на бэкенд
-    access_token, refresh_token = await link_telegram_account(
-        tg_id=message.from_user.id, email=email, password=password
-    )
+    access_token, refresh_token = await auth_client.link_telegram_account(email=email, password=password)
 
     if access_token:
         await state.clear()  # Очищаем email и пароль из памяти FSM, сбрасываем контекст
@@ -135,7 +133,7 @@ async def process_password(message: types.Message, state: FSMContext):
 
 @router.message(Command("logout"))
 @router.message(F.text == BaseActions.logout)
-async def cmd_logout(message: types.Message, state: FSMContext):
+async def cmd_logout(message: types.Message, state: FSMContext, auth_client: ApiAuthClient):
     """
     Хэндлер отвязки TelegramID от аккаунта ERP.
     Отправляет запрос на удаление TGID из записи аккаунта в БД.
@@ -144,7 +142,7 @@ async def cmd_logout(message: types.Message, state: FSMContext):
     await message.answer("Выполняю выход...")
 
     # Отвязываем ТГ на бэкенде
-    is_unlinked = await unlink_telegram_account(tg_id=message.from_user.id)
+    is_unlinked = await auth_client.unlink_telegram_account()
 
     # Стираем все данные из памяти бота
     await state.clear()
