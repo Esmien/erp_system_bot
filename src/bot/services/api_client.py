@@ -28,7 +28,7 @@ async def attempt_telegram_login(tg_id: int) -> tuple[str, str] | tuple[None, No
     """
     async with httpx.AsyncClient(base_url=API_BASE_URL) as client:
         try:
-            response = await client.post(url="/auth/telegram/login/", json={"tg_id": tg_id})
+            response = await client.post(url="/telegram/login/", json={"tg_id": tg_id})
             if response.status_code == 200:
                 access_token, refresh_token = _get_tokens(response=response)
                 logger.debug(f"ACCESS: {access_token[:-10]}, REFRESH: {refresh_token[:-10]} для User: {tg_id}")
@@ -57,7 +57,7 @@ async def link_telegram_account(tg_id: int, email: str, password: str) -> tuple[
     async with httpx.AsyncClient(base_url=API_BASE_URL) as client:
         try:
             payload = {"username": email, "password": password, "tg_id": tg_id}
-            response = await client.post(url="/auth/telegram/link/", json=payload)
+            response = await client.post(url="/telegram/link/", json=payload)
 
             if response.status_code == 200:
                 access_token, refresh_token = _get_tokens(response=response)
@@ -88,7 +88,7 @@ async def unlink_telegram_account(tg_id: int) -> bool:
             headers = {"x-bot-secret-token": settings.webhook.WEBHOOK_SECRET}
             payload = {"tg_id": tg_id}
 
-            response = await client.post(url="/auth/telegram/unlink/", json=payload, headers=headers)
+            response = await client.post(url="/telegram/unlink/", json=payload, headers=headers)
 
             if response.status_code == 200:
                 await redis_client.delete(f"backend:jwt:access:{tg_id}", f"backend:jwt:refresh:{tg_id}")
