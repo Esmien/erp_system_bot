@@ -1,6 +1,14 @@
 from pydantic import BaseModel, ConfigDict, EmailStr, Field, model_validator
 
 
+class RoleBase(BaseModel):
+    name: str
+
+
+class RoleForCodeDTO(RoleBase):
+    pass
+
+
 class UserBase(BaseModel):
     """Схема с базовыми параметрами пользователя"""
 

@@ -41,7 +41,7 @@ async def cmd_start(message: types.Message, state: FSMContext, auth_client: ApiA
         await state.update_data(access_token=access_token, refresh_token=refresh_token)
         await message.answer(
             text="Вы успешно авторизованы в системе.",
-            reply_markup=get_main_keyboard(BaseActions.logout, AdminActions.make_reg_code),
+            reply_markup=get_main_keyboard(AdminActions.make_reg_code),
         )
     else:
         # Пользователь не привязан к ТГ
@@ -131,7 +131,7 @@ async def process_password(message: types.Message, state: FSMContext, auth_clien
         await state.update_data(access_token=access_token, refresh_token=refresh_token)
         await message.answer(
             text="Учетная запись успешно привязана! Добро пожаловать.",
-            reply_markup=get_main_keyboard(AdminActions.make_reg_code, BaseActions.logout),
+            reply_markup=get_main_keyboard(AdminActions.make_reg_code),
         )
     else:
         await message.answer(
@@ -142,7 +142,6 @@ async def process_password(message: types.Message, state: FSMContext, auth_clien
 
 
 @router.message(Command("logout"))
-@router.message(F.text == BaseActions.logout)
 async def cmd_logout(message: types.Message, state: FSMContext, auth_client: ApiAuthClient):
     """
     Хэндлер отвязки TelegramID от аккаунта ERP.
@@ -158,12 +157,9 @@ async def cmd_logout(message: types.Message, state: FSMContext, auth_client: Api
     await state.clear()
 
     if is_unlinked:
-        await message.answer(
-            text="Учетная запись отвязана. Для новой авторизации нажми /start",
-            reply_markup=get_main_keyboard(BaseActions.start),
-        )
+        await message.answer(text="Учетная запись отвязана. Для новой авторизации нажми /start")
     else:
         await message.answer(
             text="Выход выполнен локально, но сервер не ответил. Связь будет разорвана позже",
-            reply_markup=get_main_keyboard(BaseActions.start, BaseActions.cancel),
+            reply_markup=get_main_keyboard(BaseActions.cancel),
         )
