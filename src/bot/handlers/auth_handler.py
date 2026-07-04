@@ -46,11 +46,21 @@ async def cmd_start(message: types.Message, state: FSMContext, auth_client: ApiA
     else:
         # Пользователь не привязан к ТГ
         await message.answer(
-            f"Привет, {message.from_user.first_name}!\n"
-            f"Ты еще не авторизован в системе.\n\n"
-            f"Отправь свой email от ERP System:"
+            text=f"Привет, {message.from_user.first_name}!\nТы еще не авторизован в системе.\n\nВыбери действие:",
+            reply_markup=get_main_keyboard(BaseActions.login, BaseActions.register),
         )
-        await state.set_state(AuthState.waiting_for_email)
+
+
+@router.message(Command("login"))
+@router.message(F.text == BaseActions.login)
+async def cmd_login(message: types.Message, state: FSMContext):
+    await state.clear()
+
+    await message.answer(
+        text="Отправь свой рабочий email:",
+        reply_markup=get_main_keyboard(BaseActions.cancel),
+    )
+    await state.set_state(AuthState.waiting_for_email)
 
 
 @router.message(Command("cancel"))

@@ -54,13 +54,27 @@ async def process_email(message: types.Message, state: FSMContext):
         return
 
     await state.update_data(email=email)
-    await message.answer("Как к тебе обращаться? Введи свое имя:")
+    await message.answer(text="Фамилия:")
+    await state.set_state(RegistrationState.waiting_for_last_name)
+
+
+@router.message(RegistrationState.waiting_for_last_name, F.text)
+async def process_last_name(message: types.Message, state: FSMContext):
+    await state.update_data(last_name=message.text.strip())
+    await message.answer("Имя:")
     await state.set_state(RegistrationState.waiting_for_name)
 
 
 @router.message(RegistrationState.waiting_for_name, F.text)
 async def process_name(message: types.Message, state: FSMContext):
     await state.update_data(name=message.text.strip())
+    await message.answer("Отчество:")
+    await state.set_state(RegistrationState.waiting_for_surname)
+
+
+@router.message(RegistrationState.waiting_for_surname, F.text)
+async def process_surname(message: types.Message, state: FSMContext):
+    await state.update_data(surname=message.text.strip())
     await message.answer("Осталось придумать пароль (минимум 3 символа):")
     await state.set_state(RegistrationState.waiting_for_password)
 
@@ -69,8 +83,6 @@ async def process_name(message: types.Message, state: FSMContext):
 async def process_password(
     message: types.Message,
     state: FSMContext,
-    reg_client: ApiRegistrationClient,
-    auth_client: ApiAuthClient,  # Берем клиент авторизации для немедленной привязки
 ):
     password = message.text.strip()
 
@@ -81,25 +93,48 @@ async def process_password(
         await message.answer("⚠️ Пароль слишком короткий. Придумай пароль от 3 символов:")
         return
 
+    await state.update_data(password=password)
+
+    await message.answer(text="Повтори пароль:")
+    await state.set_state(RegistrationState.waiting_for_repeat_password)
+
+
+@router.message(RegistrationState.waiting_for_repeat_password, F.text)
+async def process_repeat_password(
+    message: types.Message,
+    state: FSMContext,
+    reg_client: ApiRegistrationClient,
+    auth_client: ApiAuthClient,
+):
+    user_data = await state.get_data()
+
+    password = user_data["password"]
+    repeated_password = message.text.strip()
+
+    with contextlib.suppress(Exception):
+        await message.delete()
+
+    if repeated_password != password:
+        await message.answer(text="Пароли не совпадают, попробуй еще раз:")
+        await state.set_state(RegistrationState.waiting_for_password)
+        return
+
+    await state.update_data(repeat_password=repeated_password)
+
     await message.answer("⏳ Создаю учетную запись...")
 
-    user_data = await state.get_data()
-    payload = UserRegister(
-        email=user_data["email"],
-        name=user_data["name"],
-        password=password,
-        repeat_password=password,
-        register_code=user_data["register_code"],
-    )
+    payload = await state.get_data()
+
+    user = UserRegister(**payload)
 
     # Стучимся на регистрацию
-    status_code, response_data = await reg_client.register_new_user(payload)
+    status_code, response_data = await reg_client.register_new_user(user)
 
     if status_code == 201:
         await message.answer("✅ Учетная запись успешно создана! Выполняю привязку к Telegram...")
 
         # Немедленно склеиваем аккаунты
-        access_token, refresh_token = await auth_client.link_telegram_account(email=payload.email, password=password)
+        access_token, refresh_token = await auth_client.link_telegram_account(email=user.email, password=user.password)
 
         await state.clear()
 

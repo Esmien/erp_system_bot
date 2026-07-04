@@ -61,7 +61,7 @@ class ApiRegistrationClient:
     async def register_new_user(self, user_data: UserRegister) -> tuple[int | None, dict | None]:
         """Отправка данных на регистрацию"""
         try:
-            response = await self.client.post(url="/auth/register/", json=user_data)
+            response = await self.client.post(url="/auth/register/", json=user_data.model_dump(exclude_unset=True))
             return response.status_code, response.json()
         except httpx.RequestError as e:
             logger.exception(f"Ошибка соединения с бэкендом при регистрации: {e}")
