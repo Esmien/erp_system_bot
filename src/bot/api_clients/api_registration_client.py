@@ -2,6 +2,7 @@ import httpx
 from loguru import logger
 
 from bot.core.http_client import http_manager
+from bot.schemas.user_schemas import UserRegister
 
 
 class ApiRegistrationClient:
@@ -38,4 +39,30 @@ class ApiRegistrationClient:
             return status_code, register_code
         except httpx.RequestError as e:
             logger.exception(f"Ошибка соединения с бэкендом при генерации кода: {e}")
+            return None, None
+
+    async def check_registration_code(self, code) -> bool:
+        """
+        Быстрая проверка валидности кода регистрации
+
+        Args:
+            code: код для проверки
+
+        Returns:
+            True, если валиден, False, если нет
+        """
+        try:
+            response = await self.client.get(url=f"/register_code/{code}/validate/")
+            return response.status_code == 200
+        except httpx.RequestError as e:
+            logger.exception(f"Ошибка проверки кода: {e}")
+            return False
+
+    async def register_new_user(self, user_data: UserRegister) -> tuple[int | None, dict | None]:
+        """Отправка данных на регистрацию"""
+        try:
+            response = await self.client.post(url="/auth/register/", json=user_data)
+            return response.status_code, response.json()
+        except httpx.RequestError as e:
+            logger.exception(f"Ошибка соединения с бэкендом при регистрации: {e}")
             return None, None

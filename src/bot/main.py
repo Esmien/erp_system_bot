@@ -13,6 +13,7 @@ from bot.core.logger import setup_logger
 from bot.core.redis import close_redis, redis_client, storage
 from bot.handlers.admin_handler import router as admin_router
 from bot.handlers.auth_handler import router as auth_router
+from bot.handlers.registration_handler import router as register_router
 from bot.middlewares.api_clients_middleware import ApiClientMiddleware
 
 # Инициализация aiogram
@@ -22,8 +23,9 @@ dp = Dispatcher(storage=storage)
 dp.update.outer_middleware(ApiClientMiddleware())
 
 # Блок с регистрацией роутеров (хэндлеров)
-dp.include_router(auth_router)
-dp.include_router(admin_router)
+dp.include_router(router=auth_router)
+dp.include_router(router=admin_router)
+dp.include_router(router=register_router)
 
 
 @asynccontextmanager

@@ -5,6 +5,8 @@ from aiogram.types import KeyboardButton, ReplyKeyboardMarkup, ReplyKeyboardRemo
 
 class BaseActions(StrEnum):
     start = "Старт"
+    register = "Регистрация"
+    login = "Авторизация"
     logout = "Выход"
     cancel = "Отмена"
 
