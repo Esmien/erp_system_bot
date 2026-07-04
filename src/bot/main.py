@@ -8,21 +8,33 @@ from fastapi import FastAPI, HTTPException, Request, status
 from loguru import logger
 
 from bot.core.config import settings
+from bot.core.http_client import http_manager
 from bot.core.logger import setup_logger
-from bot.core.redis import close_redis, redis_client_config, storage
+from bot.core.redis import close_redis, redis_client, storage
+from bot.handlers.admin_handler import router as admin_router
 from bot.handlers.auth_handler import router as auth_router
+from bot.handlers.registration_handler import router as register_router
+from bot.middlewares.api_clients_middleware import ApiClientMiddleware
 
 # Инициализация aiogram
 bot = Bot(token=settings.bot.BOT_TOKEN, default=DefaultBotProperties(parse_mode=ParseMode.HTML))
 dp = Dispatcher(storage=storage)
+# Регистрируем мидлварь для всех обновлений
+dp.update.outer_middleware(ApiClientMiddleware())
 
-dp.include_router(auth_router)
+# Блок с регистрацией роутеров (хэндлеров)
+dp.include_router(router=auth_router)
+dp.include_router(router=admin_router)
+dp.include_router(router=register_router)
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Жизненный цикл FastAPI-приложения: старт и остановка"""
     setup_logger()
+
+    # Запускаем HTTP-клиент
+    http_manager.start()
 
     # Собираем полный URL для вебхука
     webhook_url = f"{settings.webhook.WEBHOOK_HOST}{settings.webhook.WEBHOOK_PATH}"
@@ -35,7 +47,7 @@ async def lifespan(app: FastAPI):
         allowed_updates=dp.resolve_used_update_types(),
     )
     logger.success("Вебхук установлен")
-    await redis_client_config.set(settings.redis.KEY_OF_SYSTEM_TOKEN, settings.webhook.WEBHOOK_SECRET)
+    await redis_client.set(settings.redis.KEY_OF_SYSTEM_TOKEN, settings.webhook.WEBHOOK_SECRET)
     logger.success("Системный секрет опубликован в Redis")
 
     yield
@@ -44,6 +56,10 @@ async def lifespan(app: FastAPI):
     await bot.delete_webhook()
     await bot.session.close()
     await close_redis()
+
+    # Закрываем HTTP клиент
+    await http_manager.stop()
+
     logger.success("Сервис успешно остановлен")
 
 
