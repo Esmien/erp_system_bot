@@ -20,7 +20,7 @@ class ApiRegistrationClient:
             Если бэк недоступен, то статус-код None
             Если бэк не ответил 201 OK, код регистрации None
         """
-        url = "/auth/generate-register-code/"
+        url = "/register_code/generate/"
         headers = {"Authorization": f"Bearer {token}"}
 
         try:
