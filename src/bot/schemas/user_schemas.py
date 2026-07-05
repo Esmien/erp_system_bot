@@ -5,7 +5,7 @@ class RoleBase(BaseModel):
     name: str
 
 
-class RoleForCodeDTO(RoleBase):
+class RoleDTO(RoleBase):
     pass
 
 
@@ -30,6 +30,16 @@ class RegisterCode(BaseModel):
     register_code: str = Field(
         ..., min_length=6, max_length=6, description="Одноразовый код для регистрации на платформе"
     )
+
+
+class UserRead(UserBase):
+    """Схема для возврата клиенту"""
+
+    id: int
+    tg_id: int
+    is_active: bool
+    role: RoleDTO
+    team_id: int | None = Field(default=None)
 
 
 class UserRegister(UserBase):

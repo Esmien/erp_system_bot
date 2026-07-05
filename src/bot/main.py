@@ -15,6 +15,7 @@ from bot.handlers.admin_handler import router as admin_router
 from bot.handlers.auth_handler import router as auth_router
 from bot.handlers.base_handler import router as base_router
 from bot.handlers.registration_handler import router as register_router
+from bot.handlers.user_handler import router as user_router
 from bot.middlewares.api_clients_middleware import ApiClientMiddleware
 
 # Инициализация aiogram
@@ -28,6 +29,7 @@ dp.include_router(router=base_router)
 dp.include_router(router=auth_router)
 dp.include_router(router=admin_router)
 dp.include_router(router=register_router)
+dp.include_router(router=user_router)
 
 
 @asynccontextmanager
