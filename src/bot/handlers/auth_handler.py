@@ -1,80 +1,40 @@
 import contextlib
 
 from aiogram import F, Router, types
-from aiogram.filters import Command, CommandStart
+from aiogram.filters import Command
 from aiogram.fsm.context import FSMContext
 
 from bot.api_clients.api_auth_client import ApiAuthClient
+from bot.keyboards.inline_keyboard import ActionCallback, InlineActions
 from bot.keyboards.reply_keyboard import AdminActions, BaseActions, get_main_keyboard
 from bot.states.auth_state import AuthState
 
 router = Router()
 
 
-@router.message(CommandStart())
-@router.message(F.text == BaseActions.start)
-async def cmd_start(message: types.Message, state: FSMContext, auth_client: ApiAuthClient):
-    """
-    Точка входа.
-    Выполняет тихую авторизацию, если TelegramID пользователя связан с учеткой ERP
-    Если связи нет - предлагает авторизацию по логину и паролю
-    """
+@router.callback_query(ActionCallback.filter(F.action == InlineActions.login))
+async def process_login_callback(callback: types.CallbackQuery, state: FSMContext):
+    """Перехватываем нажатие на инлайн-кнопку 'Войти'"""
+    # Блокируем кнопку до получения ответа от ТГ
+    await callback.answer()
 
-    data = await state.get_data()
-
-    # Проверяем кэш FSM (тихая авторизация без дерганья бэкенда)
-    if data.get("access_token"):
-        await message.answer(
-            text="Вы уже авторизованы в системе.",
-            reply_markup=get_main_keyboard(BaseActions.logout, AdminActions.make_reg_code),
-        )
-        return
-
-    await state.clear()
-    await message.answer("Проверяю учетную запись ERP...")
-
-    # Если в стейте пусто, стучимся на бэкенд по tg_id
-    access_token, refresh_token = await auth_client.attempt_telegram_login()
-
-    if access_token:
-        # Сохраняем токены в FSM, они попадут в redis
-        await state.update_data(access_token=access_token, refresh_token=refresh_token)
-        await message.answer(
-            text="Вы успешно авторизованы в системе.",
-            reply_markup=get_main_keyboard(BaseActions.logout, AdminActions.make_reg_code),
-        )
-    else:
-        # Пользователь не привязан к ТГ
-        await message.answer(
-            text=f"Привет, {message.from_user.first_name}!\nТы еще не авторизован в системе.\n\nВыбери действие:",
-            reply_markup=get_main_keyboard(BaseActions.login, BaseActions.register),
-        )
-
-
-@router.message(Command("login"))
-@router.message(F.text == BaseActions.login)
-async def cmd_login(message: types.Message, state: FSMContext):
+    # Сбрасываем стейт для избежания грязного состояния
     await state.clear()
 
-    await message.answer(
-        text="Отправь свой рабочий email:",
+    # Удаляем предыдущее сообщение с кнопкой
+    with contextlib.suppress(Exception):
+        await callback.message.delete()
+
+    # Запускаем флоу авторизации
+    msg = await callback.message.answer(
+        text="🔐 <b>Авторизация</b>\n------------------------------\n\n📧 Отправь свой рабочий email:",
         reply_markup=get_main_keyboard(BaseActions.cancel),
     )
+
+    # Сохраняем ID предыдущего сообщения для дальнейшей очистки
+    await state.update_data(last_bot_msg_id=msg.message_id)
+    # Переключаем стейт на ожидание email
     await state.set_state(AuthState.waiting_for_email)
-
-
-@router.message(Command("cancel"))
-@router.message(F.text == BaseActions.cancel)
-async def cmd_cancel(message: types.Message, state: FSMContext):
-    """
-    Хэндлер для сброса состояния при зависании состояния
-    """
-    current_state = await state.get_state()
-    if current_state is None:
-        return  # Стейта и так нет, ничего не делаем
-
-    await state.clear()
-    await message.answer(text="Действие отменено.", reply_markup=get_main_keyboard(BaseActions.start))
 
 
 @router.message(AuthState.waiting_for_email, F.text)
@@ -84,11 +44,22 @@ async def process_email(message: types.Message, state: FSMContext):
     Срабатывает только тогда, когда контекст ожидает ввода email (waiting_for_email)
     После обработки меняет контекст на ожидание пароля (waiting_for_password)
     """
-    # Сохраняем введенный email в память FSM
-    await state.update_data(email=message.text.strip())
+    # Удаляем сообщение с почтой
+    with contextlib.suppress(Exception):
+        await message.delete()
 
-    await message.answer(text="Введи пароль:", reply_markup=get_main_keyboard(BaseActions.cancel))
-    # Переключаем FSM: теперь бот ждет пароль
+    # Достаем ID прошлого вопроса бота и удаляем его
+    data = await state.get_data()
+    if last_msg_id := data.get("last_bot_msg_id"):
+        with contextlib.suppress(Exception):
+            await message.bot.delete_message(chat_id=message.chat.id, message_id=last_msg_id)
+
+    email = message.text.strip()
+
+    # Отправляем новый вопрос и перезаписываем ID в FSM
+    msg = await message.answer(text="🔑 Введи пароль:", reply_markup=get_main_keyboard(BaseActions.cancel))
+
+    await state.update_data(email=email, last_bot_msg_id=msg.message_id)
     await state.set_state(AuthState.waiting_for_password)
 
 
@@ -103,53 +74,66 @@ async def process_password(message: types.Message, state: FSMContext, auth_clien
         await message.delete()
 
     # Достаем email из памяти FSM
-    user_data = await state.get_data()
-    email = user_data.get("email")
+    data = await state.get_data()
+    email = data.get("email")
     password = message.text.strip()
 
+    # Удаляем прошлый вопрос бота про пароль
+    if last_msg_id := data.get("last_bot_msg_id"):
+        with contextlib.suppress(Exception):
+            await message.bot.delete_message(chat_id=message.chat.id, message_id=last_msg_id)
+
     if not email or not isinstance(email, str):
-        await message.answer(
-            text="С почтой что-то не так. Отправь свой email повторно:",
-            reply_markup=get_main_keyboard(BaseActions.cancel),
-        )
+        msg = await message.answer(text="С почтой что-то не так. Отправь свой email повторно:")
         await state.set_state(AuthState.waiting_for_email)
+        await state.update_data(last_bot_msg_id=msg.message_id)
         return
 
     # Если пользователь по ошибке или приколу отправил бинарник (картинка, стикер, медиафайл и так далее)
     if not password:
-        await message.answer("Пароль должен быть текстом. Попробуй еще раз:")
+        msg = await message.answer("Пароль должен быть текстом. Попробуй еще раз:")
+        await state.update_data(last_bot_msg_id=msg.message_id)
         return
 
-    await message.answer("Выполняю привязку аккаунта...")
+    wait_msg = await message.answer("⏳ Выполняю привязку аккаунта...")
 
     # Отправляем креды на бэкенд
     access_token, refresh_token = await auth_client.link_telegram_account(email=email, password=password)
 
+    # На этом этапе получен ответ от бэка, удаляем заглушку
+    with contextlib.suppress(Exception):
+        await wait_msg.delete()
+
     if access_token:
         await state.clear()  # Очищаем email и пароль из памяти FSM, сбрасываем контекст
+
         # Сохраняем токен в контекст FSM
         await state.update_data(access_token=access_token, refresh_token=refresh_token)
         await message.answer(
-            text="Учетная запись успешно привязана! Добро пожаловать.",
-            reply_markup=get_main_keyboard(AdminActions.make_reg_code, BaseActions.logout),
+            text="✅ Учетная запись успешно привязана! Добро пожаловать.",
+            reply_markup=get_main_keyboard(AdminActions.make_reg_code),
         )
     else:
-        await message.answer(
-            "Ошибка авторизации. Неверный email или пароль.\nДавай попробуем еще раз. Отправь свой email:"
+        msg = await message.answer(
+            "❌ Ошибка авторизации. Неверный email или пароль.\nДавай попробуем еще раз. Отправь свой email:"
         )
+
         # Откидываем юзера на шаг назад
         await state.set_state(AuthState.waiting_for_email)
+        await state.update_data(last_bot_msg_id=msg.message_id)
 
 
 @router.message(Command("logout"))
-@router.message(F.text == BaseActions.logout)
 async def cmd_logout(message: types.Message, state: FSMContext, auth_client: ApiAuthClient):
     """
     Хэндлер отвязки TelegramID от аккаунта ERP.
     Отправляет запрос на удаление TGID из записи аккаунта в БД.
     Идентификация происходит по JWT access
     """
-    await message.answer("Выполняю выход...")
+    with contextlib.suppress(Exception):
+        await message.delete()
+
+    wait_msg = await message.answer("Выполняю выход...")
 
     # Отвязываем ТГ на бэкенде
     is_unlinked = await auth_client.unlink_telegram_account()
@@ -158,12 +142,12 @@ async def cmd_logout(message: types.Message, state: FSMContext, auth_client: Api
     await state.clear()
 
     if is_unlinked:
-        await message.answer(
-            text="Учетная запись отвязана. Для новой авторизации нажми /start",
-            reply_markup=get_main_keyboard(BaseActions.start),
-        )
+        await message.answer(text="Учетная запись отвязана. Для новой авторизации нажми /start")
     else:
         await message.answer(
             text="Выход выполнен локально, но сервер не ответил. Связь будет разорвана позже",
-            reply_markup=get_main_keyboard(BaseActions.start, BaseActions.cancel),
+            reply_markup=get_main_keyboard(BaseActions.cancel),
         )
+
+    with contextlib.suppress(Exception):
+        await wait_msg.delete()

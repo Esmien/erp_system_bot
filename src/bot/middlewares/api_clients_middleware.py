@@ -6,6 +6,7 @@ from aiogram.types import TelegramObject
 
 from bot.api_clients.api_auth_client import ApiAuthClient
 from bot.api_clients.api_registration_client import ApiRegistrationClient
+from bot.api_clients.api_user_client import ApiUserClient
 
 
 class ApiClientMiddleware(BaseMiddleware):
@@ -28,7 +29,8 @@ class ApiClientMiddleware(BaseMiddleware):
             # Создаем инстансы клиентов.
             # Хэндлеры сразу получают ТГ ID
             data["auth_client"] = ApiAuthClient(tg_id=user.id)
-            data["reg_client"] = ApiRegistrationClient()
+            data["reg_client"] = ApiRegistrationClient(tg_id=user.id)
+            data["user_client"] = ApiUserClient(tg_id=user.id)
 
         # Передаем управление дальше хэндлерам
         return await handler(event, data)

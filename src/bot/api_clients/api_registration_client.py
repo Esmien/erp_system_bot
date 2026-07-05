@@ -1,20 +1,34 @@
-import httpx
 from loguru import logger
 
-from bot.core.http_client import http_manager
-from bot.schemas.user_schemas import UserRegister
+from bot.api_clients.api_base_client import ApiBaseClient
+from bot.schemas.user_schemas import RoleDTO, UserRegister
 
 
-class ApiRegistrationClient:
-    def __init__(self):
-        self.client = http_manager.client
+class ApiRegistrationClient(ApiBaseClient):
+    async def get_roles(self, token: str) -> list[dict] | None:
+        roles = None
+        url = "/users/roles/"
+        headers = {"Authorization": f"Bearer {token}"}
 
-    async def get_registration_code(self, token: str) -> tuple[int | None, str | None]:
+        async with self._safe_request():
+            response = await self.client.get(url=url, headers=headers)
+            status_code = response.status_code
+
+            if status_code == 200:
+                roles = response.json()
+                logger.success(f"Успешно получен список ролей: {roles}")
+            else:
+                logger.error(f"Неожиданный ответ от бэкенда при получении списка ролей: {status_code}")
+
+        return roles
+
+    async def get_registration_code(self, token: str, role_name: RoleDTO) -> tuple[int | None, str | None]:
         """
         Получает код для регистрации. Работает только для админов.
 
         Args:
             token: JWT токен пользователя, который генерирует
+            role_name: название роли для кода
 
         Returns:
             Кортеж, состоящий из полученного статус-кода от бэкенда и кода регистрации.
@@ -23,25 +37,24 @@ class ApiRegistrationClient:
         """
         url = "/register_code/generate/"
         headers = {"Authorization": f"Bearer {token}"}
+        payload = role_name.model_dump()
 
-        try:
-            response = await self.client.post(url=url, headers=headers)
+        async with self._safe_request():
+            response = await self.client.post(url=url, headers=headers, json=payload)
             status_code = response.status_code
-            register_code = None
 
             if status_code == 201:
                 data = response.json()
                 register_code = data.get("register_code")
+
                 logger.success(f"Код регистрации {register_code} успешно сгенерирован")
+                return status_code, register_code
             else:
                 logger.error(f"Неожиданный ответ от бэкенда при генерации кода: {status_code}")
 
-            return status_code, register_code
-        except httpx.RequestError as e:
-            logger.exception(f"Ошибка соединения с бэкендом при генерации кода: {e}")
-            return None, None
+        return None, None
 
-    async def check_registration_code(self, code) -> bool:
+    async def check_registration_code(self, code: str) -> bool:
         """
         Быстрая проверка валидности кода регистрации
 
@@ -51,18 +64,22 @@ class ApiRegistrationClient:
         Returns:
             True, если валиден, False, если нет
         """
-        try:
+        # Инициализируем до запроса, чтобы при ошибке вернуть нормальный результат
+        is_code_valid = False
+
+        async with self._safe_request():
             response = await self.client.get(url=f"/register_code/{code}/validate/")
-            return response.status_code == 200
-        except httpx.RequestError as e:
-            logger.exception(f"Ошибка проверки кода: {e}")
-            return False
+            is_code_valid = response.status_code == 200
+
+        return is_code_valid
 
     async def register_new_user(self, user_data: UserRegister) -> tuple[int | None, dict | None]:
         """Отправка данных на регистрацию"""
-        try:
+        status_code, data = None, None
+
+        async with self._safe_request():
             response = await self.client.post(url="/auth/register/", json=user_data.model_dump(exclude_unset=True))
-            return response.status_code, response.json()
-        except httpx.RequestError as e:
-            logger.exception(f"Ошибка соединения с бэкендом при регистрации: {e}")
-            return None, None
+            status_code = response.status_code
+            data = response.json()
+
+        return status_code, data
