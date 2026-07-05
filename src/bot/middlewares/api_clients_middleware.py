@@ -28,7 +28,7 @@ class ApiClientMiddleware(BaseMiddleware):
             # Создаем инстансы клиентов.
             # Хэндлеры сразу получают ТГ ID
             data["auth_client"] = ApiAuthClient(tg_id=user.id)
-            data["reg_client"] = ApiRegistrationClient()
+            data["reg_client"] = ApiRegistrationClient(tg_id=user.id)
 
         # Передаем управление дальше хэндлерам
         return await handler(event, data)

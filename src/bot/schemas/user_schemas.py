@@ -23,6 +23,7 @@ class UserLogin(BaseModel):
 
     username: EmailStr
     password: str
+    tg_id: int
 
 
 class RegisterCode(BaseModel):
