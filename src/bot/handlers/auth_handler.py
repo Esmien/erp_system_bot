@@ -13,6 +13,7 @@ from bot.keyboards.reply_keyboard import (
     get_cancel_keyboard,
     get_main_keyboard,
 )
+from bot.services.auth_service import AuthService, LoginResult
 from bot.states.auth_state import AuthState
 from bot.views.auth_view import AuthRenderer as renderer
 
@@ -66,24 +67,20 @@ async def process_email(message: types.Message, state: FSMContext):
 async def process_password(
     message: types.Message, state: FSMContext, auth_client: ApiAuthClient, user_client: ApiUserClient
 ):
-    """
-    Хэндлер для обработки пароля.
-    Срабатывает только тогда, когда контекст ожидает ввода пароля (waiting_for_password)
-    """
+    """Хэндлер пароля. Собирает данные авторизации и отдает их сервису."""
     await clean_chat_history(message=message, state=state)
 
-    # Достаем email из памяти FSM
     data = await state.get_data()
     email = data.get("email")
     password = message.text.strip()
 
+    # Базовая валидация ввода
     if not email or not isinstance(email, str):
         msg = await message.answer(text=renderer.wrong_email_format_msg)
         await state.set_state(AuthState.waiting_for_email)
         await state.update_data(last_bot_msg_id=msg.message_id)
         return
 
-    # Если пользователь по ошибке или приколу отправил бинарник (картинка, стикер, медиафайл и так далее)
     if not password:
         msg = await message.answer(text=renderer.wrong_password_format_msg)
         await state.update_data(last_bot_msg_id=msg.message_id)
@@ -91,26 +88,22 @@ async def process_password(
 
     wait_msg = await message.answer(text=renderer.waiting_for_linked_telegram_msg)
 
-    # Отправляем креды на бэкенд
-    access_token, refresh_token = await auth_client.link_telegram_account(email=email, password=password)
+    # Инициализируем сервис и передаем ему данные
+    auth_service = AuthService(auth_client=auth_client, user_client=user_client)
+    result: LoginResult = await auth_service.login_with_credentials(email=email, password=password)
 
-    # На этом этапе получен ответ от бэка, удаляем заглушку
     with contextlib.suppress(Exception):
         await wait_msg.delete()
 
-    if access_token:
-        # Запрашиваем профиль, чтобы узнать роль
-        my_info = await user_client.get_my_info(token=access_token)
-        role = my_info.role.name.lower() if my_info else None
-
+    # Управляем UI на основе ответа сервиса
+    if result.is_success:
         await state.clear()
-        # Сохраняем в стейт токены и роль
-        await state.update_data(access_token=access_token, refresh_token=refresh_token, role=role)
 
-        # Выдаем нужную клавиатуру
+        await state.update_data(access_token=result.access_token, refresh_token=result.refresh_token, role=result.role)
+
         await message.answer(
             text=renderer.succeed_link_telegram_msg,
-            reply_markup=get_main_keyboard(is_auth=True, role=role),
+            reply_markup=get_main_keyboard(is_auth=True, role=result.role),
         )
     else:
         msg = await message.answer(text=renderer.bad_credentials_msg)
@@ -119,28 +112,30 @@ async def process_password(
 
 
 @router.message(Command("logout"))
-@router.message(F.text == BaseActions.logout)  # <-- Отлавливаем нажатие кнопки из Reply-меню
-async def cmd_logout(message: types.Message, state: FSMContext, auth_client: ApiAuthClient):
+@router.message(F.text == BaseActions.logout)
+async def cmd_logout(message: types.Message, state: FSMContext, auth_client: ApiAuthClient, user_client: ApiUserClient):
+    """Хэндлер логаута. Отвязывает аккаунт ТГ от аккаунта ERP"""
     with contextlib.suppress(Exception):
         await message.delete()
 
     wait_msg = await message.answer("Выполняю выход...")
-    is_unlinked = await auth_client.unlink_telegram_account()
+
+    # Делегируем работу сервису
+    auth_service = AuthService(auth_client=auth_client, user_client=user_client)
+    is_unlinked = await auth_service.logout()
+
     await state.clear()
 
     with contextlib.suppress(Exception):
         await wait_msg.delete()
 
     if is_unlinked:
-        # Выдаем инлайн-меню для Гостя
         msg = await message.answer(text=renderer.succeed_unlinked_telegram_msg, reply_markup=select_action())
-        # Костыль для безупречного UX: удаляем нижнюю клаву пустым сообщением
         cleaner = await message.answer("...", reply_markup=get_main_keyboard(is_auth=False))
         await cleaner.delete()
-
         await state.update_data(last_bot_msg_id=msg.message_id)
     else:
         await message.answer(
             text=renderer.unlinked_with_error_msg,
-            reply_markup=get_main_keyboard(is_auth=False),  # Скрываем нижнюю клаву при ошибке
+            reply_markup=get_main_keyboard(is_auth=False),
         )

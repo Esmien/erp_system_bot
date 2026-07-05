@@ -15,6 +15,16 @@ class StartAuthResult:
     refresh_token: str | None = None
 
 
+@dataclass
+class LoginResult:
+    """Объект результата ручного входа"""
+
+    is_success: bool
+    role: str | None = None
+    access_token: str | None = None
+    refresh_token: str | None = None
+
+
 class AuthService:
     """
     Сервис бизнес-логики для процессов авторизации.
@@ -52,3 +62,24 @@ class AuthService:
 
         # Сценарий 3: Полный гость
         return StartAuthResult(is_auth=False)
+
+    async def login_with_credentials(self, email: str, password: str) -> LoginResult:
+        """
+        Проводит полный цикл ручной авторизации:
+        1. Привязка ТГ и получение токенов.
+        2. Запрос профиля для определения роли.
+        """
+        access_token, refresh_token = await self.auth_client.link_telegram_account(email=email, password=password)
+
+        if not access_token:
+            return LoginResult(is_success=False)
+
+        # Токен получен, идем за ролью
+        my_info = await self.user_client.get_my_info(token=access_token)
+        role = my_info.role.name.lower() if my_info else None
+
+        return LoginResult(is_success=True, role=role, access_token=access_token, refresh_token=refresh_token)
+
+    async def logout(self) -> bool:
+        """Делегируем логаут сервису для инкапсуляции"""
+        return await self.auth_client.unlink_telegram_account()
