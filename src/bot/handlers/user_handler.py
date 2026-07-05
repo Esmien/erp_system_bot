@@ -1,17 +1,19 @@
 import contextlib
 
-from aiogram import Router, types
+from aiogram import F, Router, types
 from aiogram.filters import Command
 from aiogram.fsm.context import FSMContext
 
 from bot.api_clients.api_user_client import ApiUserClient
 from bot.core.utils.chat_cleaner import clean_chat_history
+from bot.keyboards.reply_keyboard import BaseActions
 from bot.views.user_view import UserRenderer as renderer
 
 router = Router()
 
 
 @router.message(Command("me"))
+@router.message(F.text == BaseActions.profile)
 async def get_my_info(message: types.Message, state: FSMContext, user_client: ApiUserClient):
     await clean_chat_history(message=message, state=state)
 
