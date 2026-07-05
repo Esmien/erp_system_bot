@@ -16,9 +16,9 @@ class ApiUserClient(ApiBaseClient):
 
             if status_code == 200:
                 raw_data = response.json()
-                logger.success(f"Успешно получены данные пользователя {self.tg_id}")
                 raw_data["tg_id"] = self.tg_id
                 user = UserRead(**raw_data)
+                logger.success(f"Успешно получены данные пользователя {self.tg_id}")
             else:
                 logger.error(f"Ошибка при получении данных пользователя {self.tg_id}: Status Code: {status_code}")
 

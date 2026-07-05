@@ -130,7 +130,10 @@ async def cmd_logout(message: types.Message, state: FSMContext, auth_client: Api
     Отправляет запрос на удаление TGID из записи аккаунта в БД.
     Идентификация происходит по JWT access
     """
-    await message.answer("Выполняю выход...")
+    with contextlib.suppress(Exception):
+        await message.delete()
+
+    wait_msg = await message.answer("Выполняю выход...")
 
     # Отвязываем ТГ на бэкенде
     is_unlinked = await auth_client.unlink_telegram_account()
@@ -145,3 +148,6 @@ async def cmd_logout(message: types.Message, state: FSMContext, auth_client: Api
             text="Выход выполнен локально, но сервер не ответил. Связь будет разорвана позже",
             reply_markup=get_main_keyboard(BaseActions.cancel),
         )
+
+    with contextlib.suppress(Exception):
+        await wait_msg.delete()

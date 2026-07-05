@@ -11,9 +11,13 @@ router = Router()
 
 @router.message(Command("me"))
 async def get_my_info(message: types.Message, state: FSMContext, user_client: ApiUserClient):
+    # Сразу чистим чат от самой команды /me
+    with contextlib.suppress(Exception):
+        await message.delete()
+
     data = await state.get_data()
 
-    # Пытаемся удалить прошлый вопрос/меню бота ДО очистки стейта
+    # Удаляем старое сообщение/меню бота
     if last_msg_id := data.get("last_bot_msg_id"):
         with contextlib.suppress(Exception):
             await message.bot.delete_message(chat_id=message.chat.id, message_id=last_msg_id)
@@ -21,29 +25,42 @@ async def get_my_info(message: types.Message, state: FSMContext, user_client: Ap
     access_token = data.get("access_token")
 
     if not access_token:
-        await message.answer(text="Что-то не так с авторизацией. Пройдите ее еще раз.")
+        msg = await message.answer(text="⚠️ Сессия не найдена. Пожалуйста, авторизуйтесь заново (/start).")
+        await state.update_data(last_bot_msg_id=msg.message_id)
         return
+
+    # Вешаем временную заглушку для отзывчивости интерфейса
+    wait_msg = await message.answer("⏳ Загружаю профиль...")
 
     my_info = await user_client.get_my_info(token=access_token)
 
-    my_id = my_info.id
-    name = my_info.name
-    surname = my_info.surname
-    last_name = my_info.last_name
-    email = my_info.email
+    # Убираем заглушку
+    with contextlib.suppress(Exception):
+        await wait_msg.delete()
+
+    # Защита от падения, если бэкенд вернул None
+    if not my_info:
+        msg = await message.answer(text="❌ Ошибка получения данных. Возможно, сессия истекла. Нажми /start")
+        await state.update_data(last_bot_msg_id=msg.message_id)
+        return
+
+    # Элегантная сборка данных
+    status = "🟢 Активен" if my_info.is_active else "🔴 Деактивирован"
     role = my_info.role.name.capitalize()
-    status = "Активен" if my_info.is_active else "Деактивирован"
-    my_tg_id = my_info.tg_id
+
+    # Собираем ФИО, отбрасывая пустые поля
+    full_name_parts = [my_info.last_name, my_info.name, my_info.surname]
+    full_name = " ".join(part for part in full_name_parts if part)
 
     response_text = (
-        f"👤 <b>{role}</b>\n\n"
-        f"ID: <code>{my_id}</code>\n"
-        f"Фамилия: <b>{last_name}</b>\n"
-        f"Имя: <b>{name}</b>\n"
-        f"Отчество: <b>{surname}</b>\n"
-        f"Email: <code>{email}</code>\n"
-        f"Статус: <b>{status}</b>\n"
-        f"TelegramID: <code>{my_tg_id}</code>"
+        f"👤 <b>Ваш профиль ({role})</b>\n\n"
+        f"<b>ФИО:</b> {full_name}\n"
+        f"<b>Email:</b> <code>{my_info.email}</code>\n"
+        f"<b>Статус:</b> {status}\n\n"
+        f"<i>ID: {my_info.id} | TG: {my_info.tg_id}</i>"
     )
 
-    await message.answer(text=response_text)
+    msg = await message.answer(text=response_text)
+
+    # Сохраняем ID этой карточки, чтобы бот смог убрать ее потом
+    await state.update_data(last_bot_msg_id=msg.message_id)

@@ -33,7 +33,7 @@ async def cmd_start(message: types.Message, state: FSMContext, auth_client: ApiA
     if data.get("access_token"):
         msg = await message.answer(
             text="Вы уже авторизованы в системе.",
-            reply_markup=get_main_keyboard(AdminActions.make_reg_code, BaseActions.logout),
+            reply_markup=get_main_keyboard(AdminActions.make_reg_code),
         )
         # Перезаписываем ID, чтобы следующий /start снес и это сообщение
         await state.update_data(last_bot_msg_id=msg.message_id)
@@ -55,7 +55,7 @@ async def cmd_start(message: types.Message, state: FSMContext, auth_client: ApiA
     if access_token:
         msg = await message.answer(
             text="Вы успешно авторизованы в системе.",
-            reply_markup=get_main_keyboard(AdminActions.make_reg_code, BaseActions.logout),
+            reply_markup=get_main_keyboard(AdminActions.make_reg_code),
         )
         # Восстанавливаем токены в FSM и сохраняем ID нового сообщения
         await state.update_data(access_token=access_token, refresh_token=refresh_token, last_bot_msg_id=msg.message_id)
