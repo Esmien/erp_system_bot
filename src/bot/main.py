@@ -17,12 +17,14 @@ from bot.handlers.base_handler import router as base_router
 from bot.handlers.registration_handler import router as register_router
 from bot.handlers.user_handler import router as user_router
 from bot.middlewares.api_clients_middleware import ApiClientMiddleware
+from bot.middlewares.auth_middleware import AutoAuthMiddleware
 
 # Инициализация aiogram
 bot = Bot(token=settings.bot.BOT_TOKEN, default=DefaultBotProperties(parse_mode=ParseMode.HTML))
 dp = Dispatcher(storage=storage)
 # Регистрируем мидлварь для всех обновлений
 dp.update.outer_middleware(ApiClientMiddleware())
+dp.update.outer_middleware(AutoAuthMiddleware())
 
 # Блок с регистрацией роутеров (хэндлеров)
 dp.include_router(router=base_router)
