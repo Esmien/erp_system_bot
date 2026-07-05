@@ -5,7 +5,6 @@ from aiogram.filters import Command
 from aiogram.fsm.context import FSMContext
 
 from bot.api_clients.api_auth_client import ApiAuthClient
-from bot.handlers.base_handler import cmd_start
 from bot.keyboards.inline_keyboard import ActionCallback, InlineActions
 from bot.keyboards.reply_keyboard import AdminActions, BaseActions, get_main_keyboard
 from bot.states.auth_state import AuthState
@@ -36,30 +35,6 @@ async def process_login_callback(callback: types.CallbackQuery, state: FSMContex
     await state.update_data(last_bot_msg_id=msg.message_id)
     # Переключаем стейт на ожидание email
     await state.set_state(AuthState.waiting_for_email)
-
-
-@router.message(Command("cancel"))
-@router.message(F.text == BaseActions.cancel)
-async def cmd_cancel(message: types.Message, state: FSMContext, auth_client: ApiAuthClient):
-    """
-    Хэндлер для сброса состояния и возврата в главное меню.
-    Удаляет визуальный мусор и перенаправляет на /start
-    """
-    # Удаляем сообщение юзера (саму команду или нажатие на кнопку "Отмена")
-    with contextlib.suppress(Exception):
-        await message.delete()
-
-    # Удаляем последний зависший вопрос бота, если он был
-    data = await state.get_data()
-    if last_msg_id := data.get("last_bot_msg_id"):
-        with contextlib.suppress(Exception):
-            await message.bot.delete_message(chat_id=message.chat.id, message_id=last_msg_id)
-
-    # Полностью очищаем память
-    await state.clear()
-
-    # Отправляем пользователя в начало
-    await cmd_start(message=message, state=state, auth_client=auth_client)
 
 
 @router.message(AuthState.waiting_for_email, F.text)

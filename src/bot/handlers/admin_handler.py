@@ -5,7 +5,7 @@ from aiogram.fsm.context import FSMContext
 from bot.api_clients.api_registration_client import ApiRegistrationClient
 from bot.keyboards.inline_keyboard import RoleCallback, get_roles_inline_keyboard
 from bot.keyboards.reply_keyboard import AdminActions
-from bot.schemas.user_schemas import RoleForCodeDTO
+from bot.schemas.user_schemas import RoleDTO
 
 router = Router()
 
@@ -51,7 +51,7 @@ async def process_select_role_for_code(
         return
 
     # Оборачиваем системное имя роли из кнопки в нашу DTO-схему
-    role_dto = RoleForCodeDTO(name=callback_data.name)
+    role_dto = RoleDTO(name=callback_data.name)
 
     # Запрашиваем код
     status_code, register_code = await reg_client.get_registration_code(token=token, role_name=role_dto)

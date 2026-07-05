@@ -1,11 +1,12 @@
 from loguru import logger
 
 from bot.api_clients.api_base_client import ApiBaseClient
-from bot.schemas.user_schemas import RoleForCodeDTO, UserRegister
+from bot.schemas.user_schemas import RoleDTO, UserRegister
 
 
 class ApiRegistrationClient(ApiBaseClient):
     async def get_roles(self, token: str) -> list[dict] | None:
+        roles = None
         url = "/users/roles/"
         headers = {"Authorization": f"Bearer {token}"}
 
@@ -15,15 +16,13 @@ class ApiRegistrationClient(ApiBaseClient):
 
             if status_code == 200:
                 roles = response.json()
-
                 logger.success(f"Успешно получен список ролей: {roles}")
-                return roles
+            else:
+                logger.error(f"Неожиданный ответ от бэкенда при получении списка ролей: {status_code}")
 
-            logger.error(f"Неожиданный ответ от бэкенда при получении списка ролей: {status_code}")
+        return roles
 
-        return None
-
-    async def get_registration_code(self, token: str, role_name: RoleForCodeDTO) -> tuple[int | None, str | None]:
+    async def get_registration_code(self, token: str, role_name: RoleDTO) -> tuple[int | None, str | None]:
         """
         Получает код для регистрации. Работает только для админов.
 
