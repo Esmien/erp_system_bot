@@ -46,6 +46,10 @@ class AuthService:
             # Если токен есть, а роли нет (например, старая сессия) - идем на бэк
             if not role:
                 my_info = await self.user_client.get_my_info(token=access_token)
+
+                if not my_info:
+                    return StartAuthResult(is_auth=False)
+
                 role = my_info.role.name.lower() if my_info else None
 
             return StartAuthResult(is_auth=True, role=role)

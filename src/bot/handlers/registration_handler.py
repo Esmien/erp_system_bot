@@ -67,7 +67,7 @@ async def process_email(message: types.Message, state: FSMContext):
 
     email = message.text.strip()
 
-    if "@" not in email:
+    if not re.match(r"^[a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+$", email):
         msg = await message.answer(text=renderer.wrong_email_format_msg)
         await state.update_data(last_bot_msg_id=msg.message_id)
         return

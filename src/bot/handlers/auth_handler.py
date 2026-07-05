@@ -1,4 +1,5 @@
 import contextlib
+import re
 
 from aiogram import F, Router, types
 from aiogram.filters import Command
@@ -45,6 +46,36 @@ async def process_login_callback(callback: types.CallbackQuery, state: FSMContex
     await state.set_state(AuthState.waiting_for_email)
 
 
+@router.message(Command("logout"))
+@router.message(F.text == BaseActions.logout)
+async def cmd_logout(message: types.Message, state: FSMContext, auth_client: ApiAuthClient, user_client: ApiUserClient):
+    """Хэндлер логаута. Отвязывает аккаунт ТГ от аккаунта ERP"""
+    with contextlib.suppress(Exception):
+        await message.delete()
+
+    wait_msg = await message.answer("Выполняю выход...")
+
+    # Делегируем работу сервису
+    auth_service = AuthService(auth_client=auth_client, user_client=user_client)
+    is_unlinked = await auth_service.logout()
+
+    await state.clear()
+
+    with contextlib.suppress(Exception):
+        await wait_msg.delete()
+
+    if is_unlinked:
+        msg = await message.answer(text=renderer.succeed_unlinked_telegram_msg, reply_markup=select_action())
+        cleaner = await message.answer("...", reply_markup=get_main_keyboard(is_auth=False))
+        await cleaner.delete()
+        await state.update_data(last_bot_msg_id=msg.message_id)
+    else:
+        await message.answer(
+            text=renderer.unlinked_with_error_msg,
+            reply_markup=get_main_keyboard(is_auth=False),
+        )
+
+
 @router.message(AuthState.waiting_for_email, F.text)
 async def process_email(message: types.Message, state: FSMContext):
     """
@@ -55,6 +86,11 @@ async def process_email(message: types.Message, state: FSMContext):
     await clean_chat_history(message=message, state=state)
 
     email = message.text.strip()
+
+    if not re.match(r"^[a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+$", email):
+        msg = await message.answer(text=renderer.wrong_email_format_msg, reply_markup=get_cancel_keyboard())
+        await state.update_data(last_bot_msg_id=msg.message_id)
+        return
 
     # Отправляем новый вопрос и перезаписываем ID в FSM
     msg = await message.answer(text=renderer.waiting_for_password_msg, reply_markup=get_cancel_keyboard())
@@ -109,33 +145,3 @@ async def process_password(
         msg = await message.answer(text=renderer.bad_credentials_msg)
         await state.set_state(AuthState.waiting_for_email)
         await state.update_data(last_bot_msg_id=msg.message_id)
-
-
-@router.message(Command("logout"))
-@router.message(F.text == BaseActions.logout)
-async def cmd_logout(message: types.Message, state: FSMContext, auth_client: ApiAuthClient, user_client: ApiUserClient):
-    """Хэндлер логаута. Отвязывает аккаунт ТГ от аккаунта ERP"""
-    with contextlib.suppress(Exception):
-        await message.delete()
-
-    wait_msg = await message.answer("Выполняю выход...")
-
-    # Делегируем работу сервису
-    auth_service = AuthService(auth_client=auth_client, user_client=user_client)
-    is_unlinked = await auth_service.logout()
-
-    await state.clear()
-
-    with contextlib.suppress(Exception):
-        await wait_msg.delete()
-
-    if is_unlinked:
-        msg = await message.answer(text=renderer.succeed_unlinked_telegram_msg, reply_markup=select_action())
-        cleaner = await message.answer("...", reply_markup=get_main_keyboard(is_auth=False))
-        await cleaner.delete()
-        await state.update_data(last_bot_msg_id=msg.message_id)
-    else:
-        await message.answer(
-            text=renderer.unlinked_with_error_msg,
-            reply_markup=get_main_keyboard(is_auth=False),
-        )
