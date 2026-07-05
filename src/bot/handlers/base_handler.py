@@ -66,7 +66,7 @@ async def cmd_start(message: types.Message, state: FSMContext, auth_client: ApiA
     else:
         # Гость
         msg = await message.answer(
-            text=renderer.welcome_msg(message=message),
+            text=renderer.welcome_msg(name=message.from_user.first_name),
             reply_markup=select_action(),
         )
         # Сносим нижнюю клавиатуру костылем

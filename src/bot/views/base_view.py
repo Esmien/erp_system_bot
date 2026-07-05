@@ -4,5 +4,5 @@ class BaseRenderer:
     succeed_auth_msg = "Вы успешно авторизованы в системе."
 
     @classmethod
-    def welcome_msg(cls, message):
-        return f"Привет, {message.from_user.first_name}!\nТы еще не авторизован в системе.\n\nВыбери действие:"
+    def welcome_msg(cls, name: str):
+        return f"Привет, {name}!\nТы еще не авторизован в системе.\n\nВыбери действие:"
