@@ -6,9 +6,10 @@ from loguru import logger
 
 from bot.api_clients.api_auth_client import ApiAuthClient
 from bot.api_clients.api_registration_client import ApiRegistrationClient
+from bot.api_clients.api_user_client import ApiUserClient
 from bot.core.utils.chat_cleaner import clean_chat_history
 from bot.keyboards.inline_keyboard import ActionCallback, InlineActions
-from bot.keyboards.reply_keyboard import AdminActions, BaseActions, get_main_keyboard
+from bot.keyboards.reply_keyboard import get_cancel_keyboard, get_main_keyboard
 from bot.schemas.user_schemas import UserRegister
 from bot.states.registration_state import RegistrationState
 from bot.views.register_view import RegisterRenderer as renderer
@@ -28,7 +29,7 @@ async def process_register_callback(callback: types.CallbackQuery, state: FSMCon
     # Запускаем флоу регистрации и сохраняем ID первого сообщения
     msg = await callback.message.answer(
         text=renderer.waiting_for_register_code_msg,
-        reply_markup=get_main_keyboard(BaseActions.cancel),
+        reply_markup=get_cancel_keyboard(),
     )
     await state.update_data(last_bot_msg_id=msg.message_id)
 
@@ -127,6 +128,7 @@ async def process_repeat_password(
     state: FSMContext,
     reg_client: ApiRegistrationClient,
     auth_client: ApiAuthClient,
+    user_client: ApiUserClient,
 ):
     await clean_chat_history(message=message, state=state)
 
@@ -173,19 +175,29 @@ async def process_repeat_password(
         await state.clear()
 
         if access_token:
-            await state.update_data(access_token=access_token, refresh_token=refresh_token)
+            # 1. Узнаем роль нового пользователя
+            my_info = await user_client.get_my_info(token=access_token)
+            role = my_info.role.name.lower() if my_info else None
+
+            # 2. Сохраняем токены и роль
+            await state.update_data(access_token=access_token, refresh_token=refresh_token, role=role)
+
+            # 3. Выдаем правильную динамическую клавиатуру
             await message.answer(
                 text=renderer.register_succeed_msg,
-                reply_markup=get_main_keyboard(AdminActions.make_reg_code),
+                reply_markup=get_main_keyboard(is_auth=True, role=role),
             )
         else:
-            await message.answer(text=renderer.fail_for_link_telegram_msg)
+            await message.answer(
+                text=renderer.fail_for_link_telegram_msg,
+                reply_markup=get_main_keyboard(is_auth=False),
+            )
 
     elif status_code == 400:
         error_msg = response_data.get("detail") if response_data else "Ошибка валидации"
         msg = await message.answer(
             text=f"❌ Ошибка: {error_msg}\nПопробуй ввести другой email.",
-            reply_markup=get_main_keyboard(BaseActions.cancel),
+            reply_markup=get_cancel_keyboard(),
         )
         # Сохраняем ID сообщения с ошибкой, чтобы очистить его на следующем круге
         await state.update_data(last_bot_msg_id=msg.message_id)
@@ -194,4 +206,7 @@ async def process_repeat_password(
     else:
         logger.error(f"Неизвестная ошибка при регистрации: {status_code} - {response_data}")
         await state.clear()
-        await message.answer(text="🛠 Произошла ошибка на сервере. Попробуй позже.\n/start")
+        await message.answer(
+            text="🛠 Произошла ошибка на сервере. Попробуй позже.\n/start",
+            reply_markup=get_main_keyboard(is_auth=False),
+        )

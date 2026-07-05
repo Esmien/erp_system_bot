@@ -5,9 +5,14 @@ from aiogram.filters import Command
 from aiogram.fsm.context import FSMContext
 
 from bot.api_clients.api_auth_client import ApiAuthClient
+from bot.api_clients.api_user_client import ApiUserClient
 from bot.core.utils.chat_cleaner import clean_chat_history
-from bot.keyboards.inline_keyboard import ActionCallback, InlineActions
-from bot.keyboards.reply_keyboard import AdminActions, BaseActions, get_main_keyboard, remove_keyboard
+from bot.keyboards.inline_keyboard import ActionCallback, InlineActions, select_action
+from bot.keyboards.reply_keyboard import (
+    BaseActions,
+    get_cancel_keyboard,
+    get_main_keyboard,
+)
 from bot.states.auth_state import AuthState
 from bot.views.auth_view import AuthRenderer as renderer
 
@@ -30,7 +35,7 @@ async def process_login_callback(callback: types.CallbackQuery, state: FSMContex
     # Запускаем флоу авторизации
     msg = await callback.message.answer(
         text=renderer.welcome_auth_msg,
-        reply_markup=get_main_keyboard(BaseActions.cancel),
+        reply_markup=get_cancel_keyboard(),
     )
     # Сохраняем ID предыдущего сообщения для дальнейшей очистки
     await state.update_data(last_bot_msg_id=msg.message_id)
@@ -51,16 +56,16 @@ async def process_email(message: types.Message, state: FSMContext):
     email = message.text.strip()
 
     # Отправляем новый вопрос и перезаписываем ID в FSM
-    msg = await message.answer(
-        text=renderer.waiting_for_password_msg, reply_markup=get_main_keyboard(BaseActions.cancel)
-    )
+    msg = await message.answer(text=renderer.waiting_for_password_msg, reply_markup=get_cancel_keyboard())
 
     await state.update_data(email=email, last_bot_msg_id=msg.message_id)
     await state.set_state(AuthState.waiting_for_password)
 
 
 @router.message(AuthState.waiting_for_password, F.text)
-async def process_password(message: types.Message, state: FSMContext, auth_client: ApiAuthClient):
+async def process_password(
+    message: types.Message, state: FSMContext, auth_client: ApiAuthClient, user_client: ApiUserClient
+):
     """
     Хэндлер для обработки пароля.
     Срабатывает только тогда, когда контекст ожидает ввода пароля (waiting_for_password)
@@ -94,47 +99,48 @@ async def process_password(message: types.Message, state: FSMContext, auth_clien
         await wait_msg.delete()
 
     if access_token:
-        await state.clear()  # Очищаем email и пароль из памяти FSM, сбрасываем контекст
+        # Запрашиваем профиль, чтобы узнать роль
+        my_info = await user_client.get_my_info(token=access_token)
+        role = my_info.role.name.lower() if my_info else None
 
-        # Сохраняем токен в контекст FSM
-        await state.update_data(access_token=access_token, refresh_token=refresh_token)
+        await state.clear()
+        # Сохраняем в стейт токены и роль
+        await state.update_data(access_token=access_token, refresh_token=refresh_token, role=role)
+
+        # Выдаем нужную клавиатуру
         await message.answer(
             text=renderer.succeed_link_telegram_msg,
-            reply_markup=get_main_keyboard(AdminActions.make_reg_code),
+            reply_markup=get_main_keyboard(is_auth=True, role=role),
         )
     else:
         msg = await message.answer(text=renderer.bad_credentials_msg)
-
-        # Откидываем юзера на шаг назад
         await state.set_state(AuthState.waiting_for_email)
         await state.update_data(last_bot_msg_id=msg.message_id)
 
 
 @router.message(Command("logout"))
+@router.message(F.text == BaseActions.logout)  # <-- Отлавливаем нажатие кнопки из Reply-меню
 async def cmd_logout(message: types.Message, state: FSMContext, auth_client: ApiAuthClient):
-    """
-    Хэндлер отвязки TelegramID от аккаунта ERP.
-    Отправляет запрос на удаление TGID из записи аккаунта в БД.
-    Идентификация происходит по JWT access
-    """
     with contextlib.suppress(Exception):
         await message.delete()
 
     wait_msg = await message.answer("Выполняю выход...")
-
-    # Отвязываем ТГ на бэкенде
     is_unlinked = await auth_client.unlink_telegram_account()
-
-    # Стираем все данные из памяти бота
     await state.clear()
-
-    if is_unlinked:
-        await message.answer(text=renderer.succeed_unlinked_telegram_msg, reply_markup=remove_keyboard())
-    else:
-        await message.answer(
-            text=renderer.unlinked_with_error_msg,
-            reply_markup=get_main_keyboard(BaseActions.cancel),
-        )
 
     with contextlib.suppress(Exception):
         await wait_msg.delete()
+
+    if is_unlinked:
+        # Выдаем инлайн-меню для Гостя
+        msg = await message.answer(text=renderer.succeed_unlinked_telegram_msg, reply_markup=select_action())
+        # Костыль для безупречного UX: удаляем нижнюю клаву пустым сообщением
+        cleaner = await message.answer("...", reply_markup=get_main_keyboard(is_auth=False))
+        await cleaner.delete()
+
+        await state.update_data(last_bot_msg_id=msg.message_id)
+    else:
+        await message.answer(
+            text=renderer.unlinked_with_error_msg,
+            reply_markup=get_main_keyboard(is_auth=False),  # Скрываем нижнюю клаву при ошибке
+        )
