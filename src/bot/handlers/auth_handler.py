@@ -5,9 +5,11 @@ from aiogram.filters import Command
 from aiogram.fsm.context import FSMContext
 
 from bot.api_clients.api_auth_client import ApiAuthClient
+from bot.core.utils.chat_cleaner import clean_chat_history
 from bot.keyboards.inline_keyboard import ActionCallback, InlineActions
-from bot.keyboards.reply_keyboard import AdminActions, BaseActions, get_main_keyboard
+from bot.keyboards.reply_keyboard import AdminActions, BaseActions, get_main_keyboard, remove_keyboard
 from bot.states.auth_state import AuthState
+from bot.views.auth_view import AuthRenderer as renderer
 
 router = Router()
 
@@ -27,12 +29,12 @@ async def process_login_callback(callback: types.CallbackQuery, state: FSMContex
 
     # Запускаем флоу авторизации
     msg = await callback.message.answer(
-        text="🔐 <b>Авторизация</b>\n------------------------------\n\n📧 Отправь свой рабочий email:",
+        text=renderer.welcome_auth_msg,
         reply_markup=get_main_keyboard(BaseActions.cancel),
     )
-
     # Сохраняем ID предыдущего сообщения для дальнейшей очистки
     await state.update_data(last_bot_msg_id=msg.message_id)
+
     # Переключаем стейт на ожидание email
     await state.set_state(AuthState.waiting_for_email)
 
@@ -44,20 +46,14 @@ async def process_email(message: types.Message, state: FSMContext):
     Срабатывает только тогда, когда контекст ожидает ввода email (waiting_for_email)
     После обработки меняет контекст на ожидание пароля (waiting_for_password)
     """
-    # Удаляем сообщение с почтой
-    with contextlib.suppress(Exception):
-        await message.delete()
-
-    # Достаем ID прошлого вопроса бота и удаляем его
-    data = await state.get_data()
-    if last_msg_id := data.get("last_bot_msg_id"):
-        with contextlib.suppress(Exception):
-            await message.bot.delete_message(chat_id=message.chat.id, message_id=last_msg_id)
+    await clean_chat_history(message=message, state=state)
 
     email = message.text.strip()
 
     # Отправляем новый вопрос и перезаписываем ID в FSM
-    msg = await message.answer(text="🔑 Введи пароль:", reply_markup=get_main_keyboard(BaseActions.cancel))
+    msg = await message.answer(
+        text=renderer.waiting_for_password_msg, reply_markup=get_main_keyboard(BaseActions.cancel)
+    )
 
     await state.update_data(email=email, last_bot_msg_id=msg.message_id)
     await state.set_state(AuthState.waiting_for_password)
@@ -69,33 +65,26 @@ async def process_password(message: types.Message, state: FSMContext, auth_clien
     Хэндлер для обработки пароля.
     Срабатывает только тогда, когда контекст ожидает ввода пароля (waiting_for_password)
     """
-    # Пытаемся удалить сообщение с паролем ради безопасности
-    with contextlib.suppress(Exception):
-        await message.delete()
+    await clean_chat_history(message=message, state=state)
 
     # Достаем email из памяти FSM
     data = await state.get_data()
     email = data.get("email")
     password = message.text.strip()
 
-    # Удаляем прошлый вопрос бота про пароль
-    if last_msg_id := data.get("last_bot_msg_id"):
-        with contextlib.suppress(Exception):
-            await message.bot.delete_message(chat_id=message.chat.id, message_id=last_msg_id)
-
     if not email or not isinstance(email, str):
-        msg = await message.answer(text="С почтой что-то не так. Отправь свой email повторно:")
+        msg = await message.answer(text=renderer.wrong_email_format_msg)
         await state.set_state(AuthState.waiting_for_email)
         await state.update_data(last_bot_msg_id=msg.message_id)
         return
 
     # Если пользователь по ошибке или приколу отправил бинарник (картинка, стикер, медиафайл и так далее)
     if not password:
-        msg = await message.answer("Пароль должен быть текстом. Попробуй еще раз:")
+        msg = await message.answer(text=renderer.wrong_password_format_msg)
         await state.update_data(last_bot_msg_id=msg.message_id)
         return
 
-    wait_msg = await message.answer("⏳ Выполняю привязку аккаунта...")
+    wait_msg = await message.answer(text=renderer.waiting_for_linked_telegram_msg)
 
     # Отправляем креды на бэкенд
     access_token, refresh_token = await auth_client.link_telegram_account(email=email, password=password)
@@ -110,13 +99,11 @@ async def process_password(message: types.Message, state: FSMContext, auth_clien
         # Сохраняем токен в контекст FSM
         await state.update_data(access_token=access_token, refresh_token=refresh_token)
         await message.answer(
-            text="✅ Учетная запись успешно привязана! Добро пожаловать.",
+            text=renderer.succeed_link_telegram_msg,
             reply_markup=get_main_keyboard(AdminActions.make_reg_code),
         )
     else:
-        msg = await message.answer(
-            "❌ Ошибка авторизации. Неверный email или пароль.\nДавай попробуем еще раз. Отправь свой email:"
-        )
+        msg = await message.answer(text=renderer.bad_credentials_msg)
 
         # Откидываем юзера на шаг назад
         await state.set_state(AuthState.waiting_for_email)
@@ -142,10 +129,10 @@ async def cmd_logout(message: types.Message, state: FSMContext, auth_client: Api
     await state.clear()
 
     if is_unlinked:
-        await message.answer(text="Учетная запись отвязана. Для новой авторизации нажми /start")
+        await message.answer(text=renderer.succeed_unlinked_telegram_msg, reply_markup=remove_keyboard())
     else:
         await message.answer(
-            text="Выход выполнен локально, но сервер не ответил. Связь будет разорвана позже",
+            text=renderer.unlinked_with_error_msg,
             reply_markup=get_main_keyboard(BaseActions.cancel),
         )
 

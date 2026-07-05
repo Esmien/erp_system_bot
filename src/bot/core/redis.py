@@ -9,7 +9,7 @@ from bot.core.config import settings
 redis_client = Redis.from_url(url=settings.redis.redis_url, decode_responses=True)
 
 # Передаем клиент в хранилище aiogram
-storage = RedisStorage(redis=redis_client, key_builder=DefaultKeyBuilder(with_destiny=True), data_ttl=3600)
+storage = RedisStorage(redis=redis_client, key_builder=DefaultKeyBuilder(with_destiny=True))
 
 
 def get_redis() -> Redis:

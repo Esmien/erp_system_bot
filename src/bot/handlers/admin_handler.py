@@ -6,6 +6,7 @@ from bot.api_clients.api_registration_client import ApiRegistrationClient
 from bot.keyboards.inline_keyboard import RoleCallback, get_roles_inline_keyboard
 from bot.keyboards.reply_keyboard import AdminActions
 from bot.schemas.user_schemas import RoleDTO
+from bot.views.admin_view import AdminRenderer as renderer
 
 router = Router()
 
@@ -18,18 +19,18 @@ async def cmd_make_reg_code(message: types.Message, state: FSMContext, reg_clien
     token: str | None = data.get("access_token")
 
     if not token:
-        await message.answer(text="Сначала необходимо авторизоваться в системе.")
+        await message.answer(text=renderer.auth_required_msg)
         return
 
     roles = await reg_client.get_roles(token=token)
 
     if not roles:
-        await message.answer(text="Не удалось получить список ролей. Попробуй позже.")
+        await message.answer(text=renderer.roles_not_found_msg)
         return
 
     keyboard = get_roles_inline_keyboard(roles=roles)
 
-    await message.answer(text="Выбери роль для нового инвайт-кода:", reply_markup=keyboard)
+    await message.answer(text=renderer.select_role_msg, reply_markup=keyboard)
 
 
 @router.callback_query(RoleCallback.filter())
@@ -47,7 +48,7 @@ async def process_select_role_for_code(
     token: str | None = data.get("access_token")
 
     if not token:
-        await callback.message.answer("Сессия истекла. Пожалуйста, авторизуйтесь заново.")
+        await callback.message.answer(text=renderer.session_expired_msg)
         return
 
     # Оборачиваем системное имя роли из кнопки в нашу DTO-схему
@@ -57,16 +58,12 @@ async def process_select_role_for_code(
     status_code, register_code = await reg_client.get_registration_code(token=token, role_name=role_dto)
 
     if status_code == 201:
-        text = (
-            f"✅ <b>Код регистрации успешно создан!</b>\n\n"
-            f"Назначенная роль: <b>{callback_data.name.capitalize()}</b>\n"
-            f"<code>{register_code}</code>\n\n"
-            f"⏳ <i>Код одноразовый и действителен 24 часа. Отправьте его новому сотруднику.</i>"
-        )
+        role = callback_data.name.capitalize()
+        text = renderer.succeed_generated_code(role=role, code=register_code)
         # Редактируем сообщение с кнопками, заменяя его на итоговый текст
         await callback.message.edit_text(text=text)
 
     elif status_code == 403:
-        await callback.message.edit_text("❌ У вас недостаточно прав для генерации инвайт-кодов.")
+        await callback.message.edit_text(text=renderer.access_denied_msg)
     else:
-        await callback.message.edit_text("🛠 Проблемы на сервере, попробуйте позже.")
+        await callback.message.edit_text(text=renderer.server_error_msg)

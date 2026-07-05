@@ -5,8 +5,10 @@ from aiogram.filters import Command, CommandStart
 from aiogram.fsm.context import FSMContext
 
 from bot.api_clients.api_auth_client import ApiAuthClient
+from bot.core.utils.chat_cleaner import clean_chat_history
 from bot.keyboards.inline_keyboard import select_action
 from bot.keyboards.reply_keyboard import AdminActions, BaseActions, get_main_keyboard, remove_keyboard
+from bot.views.base_view import BaseRenderer as renderer
 
 router = Router()
 
@@ -18,12 +20,9 @@ async def cmd_start(message: types.Message, state: FSMContext, auth_client: ApiA
     Выполняет тихую авторизацию, если TelegramID пользователя связан с учеткой ERP
     Если связи нет - предлагает авторизацию по логину и паролю или регистрацию
     """
-    data = await state.get_data()
+    await clean_chat_history(message=message, state=state)
 
-    # Пытаемся удалить прошлый вопрос/меню бота ДО очистки стейта
-    if last_msg_id := data.get("last_bot_msg_id"):
-        with contextlib.suppress(Exception):
-            await message.bot.delete_message(chat_id=message.chat.id, message_id=last_msg_id)
+    data = await state.get_data()
 
     # Удаляем само сообщение юзера с командой /start, чтобы чат был чистым
     with contextlib.suppress(Exception):
@@ -32,7 +31,7 @@ async def cmd_start(message: types.Message, state: FSMContext, auth_client: ApiA
     # Проверяем кэш FSM (тихая авторизация без дерганья бэкенда)
     if data.get("access_token"):
         msg = await message.answer(
-            text="Вы уже авторизованы в системе.",
+            text=renderer.already_auth_msg,
             reply_markup=get_main_keyboard(AdminActions.make_reg_code),
         )
         # Перезаписываем ID, чтобы следующий /start снес и это сообщение
@@ -43,7 +42,7 @@ async def cmd_start(message: types.Message, state: FSMContext, auth_client: ApiA
     await state.clear()
 
     # Вешаем сообщение-заглушку на время запроса
-    wait_msg = await message.answer(text="Проверяю учетную запись ERP...", reply_markup=remove_keyboard())
+    wait_msg = await message.answer(text=renderer.waiting_for_check_account_msg, reply_markup=remove_keyboard())
 
     # Если в стейте пусто, стучимся на бэкенд по tg_id
     access_token, refresh_token = await auth_client.attempt_telegram_login()
@@ -54,7 +53,7 @@ async def cmd_start(message: types.Message, state: FSMContext, auth_client: ApiA
 
     if access_token:
         msg = await message.answer(
-            text="Вы успешно авторизованы в системе.",
+            text=renderer.succeed_auth_msg,
             reply_markup=get_main_keyboard(AdminActions.make_reg_code),
         )
         # Восстанавливаем токены в FSM и сохраняем ID нового сообщения
@@ -63,7 +62,7 @@ async def cmd_start(message: types.Message, state: FSMContext, auth_client: ApiA
         # Пользователь не привязан к ТГ
         keyboard = select_action()
         msg = await message.answer(
-            text=f"Привет, {message.from_user.first_name}!\nТы еще не авторизован в системе.\n\nВыбери действие:",
+            text=renderer.welcome_msg(message=message),
             reply_markup=keyboard,
         )
         # Сохраняем ID стартового меню
@@ -77,15 +76,7 @@ async def cmd_cancel(message: types.Message, state: FSMContext, auth_client: Api
     Хэндлер для сброса состояния и возврата в главное меню.
     Удаляет визуальный мусор и перенаправляет на /start
     """
-    # Удаляем сообщение юзера (саму команду или нажатие на кнопку "Отмена")
-    with contextlib.suppress(Exception):
-        await message.delete()
-
-    # Удаляем последний зависший вопрос бота, если он был
-    data = await state.get_data()
-    if last_msg_id := data.get("last_bot_msg_id"):
-        with contextlib.suppress(Exception):
-            await message.bot.delete_message(chat_id=message.chat.id, message_id=last_msg_id)
+    await clean_chat_history(message=message, state=state)
 
     # Полностью очищаем память
     await state.clear()
