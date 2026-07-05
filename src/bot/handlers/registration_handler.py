@@ -1,4 +1,5 @@
 import contextlib
+import re
 
 from aiogram import F, Router, types
 from aiogram.fsm.context import FSMContext
@@ -71,39 +72,41 @@ async def process_email(message: types.Message, state: FSMContext):
         await state.update_data(last_bot_msg_id=msg.message_id)
         return
 
-    msg = await message.answer(text=renderer.waiting_for_last_name_msg)
+    msg = await message.answer(text=renderer.waiting_for_full_name_msg)
     await state.update_data(email=email, last_bot_msg_id=msg.message_id)
 
-    await state.set_state(RegistrationState.waiting_for_last_name)
+    await state.set_state(RegistrationState.waiting_for_full_name)
 
 
-@router.message(RegistrationState.waiting_for_last_name, F.text)
-async def process_last_name(message: types.Message, state: FSMContext):
+@router.message(RegistrationState.waiting_for_full_name, F.text)
+async def process_full_name(message: types.Message, state: FSMContext):
     await clean_chat_history(message=message, state=state)
 
-    msg = await message.answer(text=renderer.waiting_for_name_msg)
-    await state.update_data(last_name=message.text.strip(), last_bot_msg_id=msg.message_id)
+    text = message.text.strip()
 
-    await state.set_state(RegistrationState.waiting_for_name)
+    # Валидация: только буквы (кириллица/латиница), пробелы и дефис для двойных фамилий
+    if not re.match(r"^[А-Яа-яЁёA-Za-z\s-]+$", text):
+        msg = await message.answer(text=renderer.wrong_full_name_format_msg, reply_markup=get_cancel_keyboard())
+        await state.update_data(last_bot_msg_id=msg.message_id)
+        return
 
+    parts = text.split()
 
-@router.message(RegistrationState.waiting_for_name, F.text)
-async def process_name(message: types.Message, state: FSMContext):
-    await clean_chat_history(message=message, state=state)
+    # Проверяем, что ввели хотя бы 2 слова (Фамилия Имя) и не больше 3
+    if len(parts) < 2 or len(parts) > 3:
+        msg = await message.answer(text=renderer.wrong_full_name_length_msg, reply_markup=get_cancel_keyboard())
+        await state.update_data(last_bot_msg_id=msg.message_id)
+        return
 
-    msg = await message.answer(text=renderer.waiting_for_surname_msg)
-    await state.update_data(name=message.text.strip(), last_bot_msg_id=msg.message_id)
+    # Парсим с капитализацией (чтобы "иванов иван" стало "Иванов Иван")
+    last_name = parts[0].capitalize()
+    name = parts[1].capitalize()
+    surname = parts[2].capitalize() if len(parts) == 3 else None
 
-    await state.set_state(RegistrationState.waiting_for_surname)
+    # Идем дальше, спрашиваем пароль
+    msg = await message.answer(text=renderer.waiting_for_password_msg, reply_markup=get_cancel_keyboard())
 
-
-@router.message(RegistrationState.waiting_for_surname, F.text)
-async def process_surname(message: types.Message, state: FSMContext):
-    await clean_chat_history(message=message, state=state)
-
-    msg = await message.answer(text=renderer.waiting_for_password_msg)
-    await state.update_data(surname=message.text.strip(), last_bot_msg_id=msg.message_id)
-
+    await state.update_data(last_name=last_name, name=name, surname=surname, last_bot_msg_id=msg.message_id)
     await state.set_state(RegistrationState.waiting_for_password)
 
 
